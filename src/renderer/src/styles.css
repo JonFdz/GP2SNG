@@ -1,0 +1,1359 @@
+/* Inter, self-hosted as woff2 (weights 400/500/600) so text renders identically
+   on every machine offline (docs/STYLE_GUIDE.md → Typography). Latin subset. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/inter-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./assets/fonts/inter-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./assets/fonts/inter-600.woff2') format('woff2');
+}
+
+:root {
+  --bg-base: #0e1319;
+  --bg-surface: #171e27;
+  --bg-raised: #232c37;
+  --text-primary: #e6eaf0;
+  --text-muted: #8a93a0;
+  --text-faint: #6e7783;
+  --text-soft: #aeb7c2;
+  --text-on-accent: #0e1319;
+  --accent-blue: #24addb;
+  --accent-blue-hover: #42bfe8;
+  --accent-red: #df3d41;
+  --accent-green: #75b621;
+  --radius-sm: 4px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --font-stack: Inter, system-ui, sans-serif;
+  /* Max width the app column grows to before it caps and centers (docs/DESIGN.md
+     → Window). Below this the column is full width and behaves as an uncapped app. */
+  --content-max-width: 960px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Scrollbars (docs/STYLE_GUIDE.md palette): medium-gray track, blue thumb, blue
+   arrow glyphs — replaces Chromium's default gray-on-white. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: var(--bg-raised);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--accent-blue);
+  border: 2px solid var(--bg-raised);
+  border-radius: var(--radius-md);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-blue-hover);
+}
+
+::-webkit-scrollbar-button {
+  background: var(--bg-raised) no-repeat center / 8px;
+  height: 12px;
+  width: 12px;
+}
+
+::-webkit-scrollbar-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M5 3 L8 7 L2 7 Z' fill='%2324addb'/%3E%3C/svg%3E");
+}
+
+::-webkit-scrollbar-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M5 7 L2 3 L8 3 Z' fill='%2324addb'/%3E%3C/svg%3E");
+}
+
+::-webkit-scrollbar-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M3 5 L7 2 L7 8 Z' fill='%2324addb'/%3E%3C/svg%3E");
+}
+
+::-webkit-scrollbar-button:horizontal:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M7 5 L3 2 L3 8 Z' fill='%2324addb'/%3E%3C/svg%3E");
+}
+
+/* Hide the phantom second pair of buttons Chromium reserves at each track end. */
+::-webkit-scrollbar-button:vertical:decrement:end,
+::-webkit-scrollbar-button:vertical:increment:start,
+::-webkit-scrollbar-button:horizontal:decrement:end,
+::-webkit-scrollbar-button:horizontal:increment:start {
+  display: none;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-stack);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* Cap the whole app column and center it in the window on wide/fullscreen displays,
+     so the tab strip, content, and footer move inward together rather than stretching
+     edge-to-edge (docs/DESIGN.md → Window). Full width below the cap. The scrollbar
+     full-bleed tricks below resolve against this column's edge, so they keep hugging
+     its right side when capped and the true window edge when the window is narrower. */
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+}
+
+.tab-strip {
+  display: flex;
+  gap: 24px;
+  padding: 12px 20px 0;
+  border-bottom: 1px solid var(--bg-raised);
+}
+
+.tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 2px 10px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 120ms;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-blue);
+}
+
+.tab-body {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+}
+
+.placeholder {
+  color: var(--text-faint);
+}
+
+.startup-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 20px 0;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-red);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.startup-notice__dismiss {
+  margin-left: auto;
+  appearance: none;
+  background: var(--bg-raised);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* Buttons */
+.btn {
+  appearance: none;
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms;
+}
+
+.btn:hover {
+  background: var(--accent-blue);
+  color: var(--text-on-accent);
+}
+
+.btn--primary {
+  background: var(--accent-blue);
+  color: var(--text-on-accent);
+}
+
+.btn--primary:hover {
+  background: var(--accent-blue-hover);
+}
+
+/* Destructive: neutral at rest, red on hover (docs/STYLE_GUIDE.md → Buttons) */
+.btn--destructive:hover {
+  background: var(--accent-red);
+  color: var(--text-on-accent);
+}
+
+.btn:disabled,
+.btn:disabled:hover {
+  background: var(--bg-surface);
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* View headings */
+.view-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.view-hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+/* Inline error banner (docs/DESIGN.md → Error handling: inline where detected) */
+.error-banner {
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-red);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+/* Shared amber warning treatment: the Load section-names notice (.warning-banner)
+   and the Mapping overlap warnings (.overlap-warning) share one look — a
+   dark amber-tinted surface, a 1px amber border at 80% opacity with a 6px left
+   accent, and small italic body text in a darker color warmed heavily with amber.
+   Laid out as a flex row so the leading amber ⚠ (.warning-icon) keeps its own
+   column, vertically centered, with the message (.warning-text) wrapping beside
+   it rather than under it. */
+.warning-banner,
+.overlap-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--bg-base) 88%, #db6e24);
+  border: 1px solid color-mix(in srgb, #db6e24 80%, transparent);
+  border-left-width: 6px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-style: italic;
+  color: color-mix(in srgb, var(--text-muted) 60%, #db6e24);
+}
+
+/* Message column: takes the row's remaining width so it wraps beside the icon. */
+.warning-text {
+  flex: 1;
+}
+
+/* Load: full-width notice spaced below the song details. */
+.warning-banner {
+  margin-top: 16px;
+}
+
+/* Load step summary */
+.load-summary {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+}
+
+.load-summary__file {
+  font-weight: 600;
+}
+
+.load-summary__meta {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+/* Load step: the drum-track picker sits below the load summary on the same page */
+.track-select {
+  margin-top: 24px;
+}
+
+/* Track selection list */
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.track-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  font: inherit;
+  text-align: left;
+  background: var(--bg-surface);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 120ms, background-color 120ms;
+}
+
+.track-row:hover {
+  border-color: var(--bg-raised);
+}
+
+.track-row--selected,
+.track-row--selected:hover {
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-surface));
+}
+
+.track-row__name {
+  font-weight: 600;
+}
+
+.track-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.track-row__count {
+  font-variant-numeric: tabular-nums;
+}
+
+.track-tag {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent-blue);
+}
+
+/* Wizard shell: progress indicator + scrollable body + pinned footer. The wizard
+   fills the tab body's height so the footer is always visible and the body is its
+   own scroll region — which also gives the Preview highway/minimap a definite
+   height to fill and track as the window resizes. */
+.wizard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.wizard__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* This inner body — not the padded .tab-body (which scrolls on the Settings tab) —
+     is the Convert tab's scroll region. Full-bleed it to the window's right edge so
+     its scrollbar sits flush right like Settings (the -20px cancels .tab-body's right
+     padding), then re-inset the content by an equal padding so it keeps a gap from the
+     bar. Content width and position are unchanged; only the scrollbar moves outward. */
+  margin-right: -20px;
+  padding-right: 20px;
+}
+
+.wizard__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+/* Right cluster of the footer: the primary button with an optional red status
+   message (blocking errors / a failed confirm) directly to its left. */
+.wizard__footer-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.wizard__footer-msg {
+  color: var(--accent-red);
+  font-size: 13px;
+  text-align: right;
+}
+
+/* Finalize's Save action + output filename, portaled into the footer-right slot. */
+.finalize-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  /* A definite width (not auto) so the flex:1 connector lines can grow and push
+     the four steps apart; centered in the remaining space. Without this the auto
+     margins shrink-wrap the row to content width and the steps bunch up. */
+  width: 80%;
+  margin: 0 auto 20px;
+  padding: 0;
+  list-style: none;
+}
+
+.progress__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.progress__step--done,
+.progress__step--active {
+  color: var(--text-primary);
+}
+
+.progress__step--active {
+  font-weight: 600;
+}
+
+/* Upcoming but reachable (already visited / requirements met): lighter than an
+   unreachable step, so a user can tell which future steps they may jump to. */
+.progress__step--reachable {
+  color: var(--text-soft);
+}
+
+.progress__step-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: color 120ms;
+}
+
+.progress__step-link:hover {
+  color: var(--text-primary);
+}
+
+.progress__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+}
+
+.progress__step--done .progress__dot,
+.progress__step--active .progress__dot {
+  background: var(--accent-blue);
+}
+
+.progress__step--reachable .progress__dot {
+  background: var(--text-soft);
+}
+
+.progress__line {
+  flex: 1;
+  min-width: 16px;
+  height: 1px;
+  margin: 0 12px;
+  background: var(--bg-raised);
+}
+
+/* Small button variant (inline retry affordances) */
+.btn--small {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+/* Inline error banner variant: tighter, with a trailing retry button */
+.error-banner--inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* Text input (docs/STYLE_GUIDE.md → Inputs & form fields) */
+.text-input {
+  appearance: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-raised);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.text-input::placeholder {
+  color: var(--text-faint);
+}
+
+.text-input:focus {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-color: var(--accent-blue);
+}
+
+/* Settings tab (also the Mapping step's section wrapper). Fills the available width;
+   the width cap and centering are applied once at the app column (.app-shell), not here. */
+.settings-section {
+  margin-top: 24px;
+}
+
+.settings-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.settings-dir {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-dir .text-input {
+  flex: 1;
+}
+
+.segmented {
+  display: flex;
+  gap: 8px;
+}
+
+/* MIDI map view (docs/DESIGN.md → MIDI map component; docs/STYLE_GUIDE.md → MIDI map visuals) */
+.midi-map {
+  margin-top: 12px;
+}
+
+.midi-map__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* A toolbar setting paired with its inline HelpIcon on one line. */
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.midi-map__color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Dynamic cymbal mapping on: the toggle and the three priority lists it governs
+   are bound into one outlined group (matches the map rows' border/radius). */
+.cymbal-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--bg-raised);
+  border-radius: var(--radius-lg);
+}
+
+/* Toolbar option labels match the view hint above them: small, light, unbolded. */
+.midi-map__toolbar .checkbox,
+.midi-map__color-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+/* Checkbox (docs/STYLE_GUIDE.md → accent-blue for interactive accents) */
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
+.midi-map__rows {
+  border: 1px solid var(--bg-raised);
+  border-radius: var(--radius-lg);
+}
+
+.midi-row {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 30px;
+  padding: 5px 14px;
+  border-top: 1px solid var(--bg-raised);
+}
+
+.midi-map__pair:first-child .midi-row:first-child {
+  border-top: none;
+}
+
+.midi-row--accented .midi-row__label {
+  padding-left: 20px;
+}
+
+.midi-row--over {
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-blue);
+}
+
+.midi-row__label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+}
+
+.swatch {
+  flex: none;
+}
+
+.midi-row__zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.midi-card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  padding: 4px 8px;
+  background: var(--bg-raised);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: grab;
+  user-select: none;
+  appearance: none;
+}
+
+.midi-card:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* Only the interactive (draggable) map cards get the hover lift; the static
+   warning tags keep their own light background (below). */
+.midi-card:not(.midi-card--static):hover {
+  background: color-mix(in srgb, var(--text-primary) 8%, var(--bg-raised));
+}
+
+.midi-card--dragging {
+  opacity: 0.35;
+}
+
+.midi-card--overlay {
+  border-color: var(--accent-blue);
+  cursor: grabbing;
+}
+
+.midi-card--static {
+  cursor: default;
+  vertical-align: middle;
+  margin: 0 1px;
+  /* Inline in warning text (which is italic) — keep the note number upright. */
+  font-style: normal;
+  /* Light chip with dark text so the note numbers stand out against the dark
+     amber warning background instead of blending into it. */
+  background: var(--text-muted);
+  color: var(--text-on-accent);
+}
+
+.midi-bucket {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px dashed var(--bg-raised);
+  border-radius: var(--radius-lg);
+}
+
+.midi-bucket--over {
+  border-style: solid;
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+}
+
+.midi-bucket__label {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.midi-bucket__zone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.midi-tooltip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  padding: 4px 8px;
+  background: var(--bg-base);
+  border: 1px solid var(--bg-raised);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Warning-dot tooltip: one message per line, wrapping long messages. */
+.midi-tooltip--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 320px;
+  white-space: normal;
+}
+
+/* The red "Error:" lead-in on the highway error-line tooltip; the message stays white. */
+.tooltip-error-label {
+  color: var(--accent-red);
+  font-weight: 600;
+}
+
+/* Icon-anchored help tooltip: a hoverable circled "?" that reveals wrapping help
+   text pinned above the glyph. Shares the .midi-tooltip look but is anchored to the
+   icon rather than the cursor (docs/STYLE_GUIDE.md → Iconography, Tooltips). */
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  /* Optical nudge up onto the text's cap-height centre for inline placement after a
+     label; `middle` (x-height centre) sits ~2px low. Ignored in the .setting-row flex
+     usage, where align-items handles centring. */
+  vertical-align: -2px;
+  color: var(--text-muted);
+}
+
+.help-icon:hover {
+  color: var(--accent-blue);
+}
+
+/* Fixed (viewport-relative) so it is never clipped by a scroll/overflow ancestor;
+   the icon's top-centre is passed as inline left/top and this transform lifts it
+   above the glyph. */
+.help-icon__tip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 6px));
+  z-index: 50;
+  width: max-content;
+  max-width: 340px;
+  padding: 6px 8px;
+  background: var(--bg-base);
+  border: 1px solid var(--bg-raised);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--text-primary);
+  white-space: normal;
+  pointer-events: none;
+}
+
+/* Mapping step: overlap warnings + confirm action */
+.overlap-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* .overlap-warning box styling is shared with .warning-banner (see the shared
+   amber warning treatment above). */
+
+/* Shared leading warning icon (⚠) for all amber warnings. Holds its own column
+   (flex: none) and stays upright despite the italic warning text. */
+.warning-icon {
+  flex: none;
+  color: #db6e24;
+  font-size: 16px;
+  font-style: normal;
+}
+
+/* Modal (docs/DESIGN.md → UI top-level structure → transient flows) */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-base) 70%, transparent);
+}
+
+.modal {
+  width: 90%;
+  max-width: 420px;
+  padding: 20px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-raised);
+  border-radius: var(--radius-lg);
+}
+
+.modal__title {
+  margin-bottom: 8px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.modal__body {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Affirmative (Save): neutral at rest, green on hover — docs/STYLE_GUIDE.md → Buttons */
+.btn--affirmative:hover {
+  background: var(--accent-green);
+  color: var(--text-on-accent);
+}
+
+/* Preview step (docs/DESIGN.md → Chart preview + playback component) */
+.preview {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  height: 100%;
+  /* Canvas width: geometry.ts HIGHWAY_MAX_WIDTH (280) plus a thin dark margin each
+     side, so the centered highway leaves room for the error underlines' rounded caps
+     to overhang its edges (ChartCanvas ERROR_LINE_OVERHANG). Keep it a touch wider
+     than 280 + 2×overhang. */
+  --highway-width: 300px;
+}
+
+.preview__main {
+  flex: none;
+  width: var(--highway-width);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview__chart {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.chart-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  cursor: crosshair;
+}
+
+/* Bar-nav buttons under the highway: two side-by-side buttons that evenly split the
+   highway width (each flex: 1), seeking to the previous / next bar start. */
+.preview__barnav {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  /* The highway strip now fills the canvas to its rounded bottom, so the buttons sit
+     a normal 16px content gap below it (8px flex gap from .preview__main + this). */
+  margin-top: 8px;
+}
+
+.preview__barnav .btn {
+  flex: 1;
+}
+
+/* Warning gutter: a thin column between the highway and the minimap that shares
+   the minimap's bottom→top time axis. Bright-red dots mark warning positions;
+   each is placed by `top: (1 − seconds / songEnd)%` and centered on that point. */
+.preview__warnings {
+  position: relative;
+  flex: none;
+  width: 14px;
+  /* Pull the gutter into both flanking 16px flex gaps so the total space between
+     the highway and the minimap is roughly halved. */
+  margin-left: -12px;
+  margin-right: -12px;
+}
+
+.preview__dot {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 1px solid var(--bg-base);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.preview__dot--warning {
+  background: #ffcc00;
+}
+
+.preview__dot--warning:hover {
+  background: #ffd633;
+}
+
+/* Errors render after warnings in the DOM; z-index keeps red atop coincident yellow.
+   Drawn as a right-pointing triangle (arrow) rather than a dot, to read as "jump to
+   this error"; slightly taller than the warning dots so the arrowhead stays legible. */
+.preview__dot--error {
+  width: 11px;
+  height: 12px;
+  /* Solid through the right half (toward the arrow's point), fading to transparent at
+     the left edge so the arrowhead resolves toward its tip. */
+  background: linear-gradient(to right, transparent 0%, #ff3b30 50%, #ff3b30 100%);
+  border: none;
+  border-radius: 0;
+  clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+  z-index: 1;
+}
+
+.preview__dot--error:hover {
+  background: linear-gradient(to right, transparent 0%, #ff6259 50%, #ff6259 100%);
+}
+
+.preview__minimap {
+  position: relative;
+  flex: none;
+  width: 72px;
+  /* Clip section labels to the panel: the song-start label sits at the bottom edge
+     (top: 100%) and would otherwise spill below the minimap. */
+  overflow: hidden;
+}
+
+.minimap-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+/* Section labels overlaid on the minimap: small, 2-line max, gentle outline so they
+   read atop the gems; pointer-events off so clicks fall through to the canvas. */
+.minimap__label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 1.1;
+  color: var(--text-primary);
+  pointer-events: none;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  /* Gentle dark outline so labels stay legible over the colored gems. */
+  text-shadow: 0 0 2px #000, 0 0 3px rgba(0, 0, 0, 0.85), 0 1px 1px rgba(0, 0, 0, 0.7);
+}
+
+.preview__sidebar {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* The preview fills the window height, so the sidebar scrolls its own contents
+     rather than overflowing past the footer on a short window. */
+  min-height: 0;
+  overflow-y: auto;
+  /* Preview never scrolls .wizard__body (the preview is height:100%), so this sidebar
+     is the Preview step's scroll region. Full-bleed its scrollbar to the window's right
+     edge with the same trick .wizard__body uses (the -20px cancels .wizard__body's right
+     padding), then re-inset the content by an equal padding so it keeps a gap from the
+     bar. Content width and position are unchanged; only the scrollbar moves outward. */
+  margin-right: -20px;
+  padding-right: 20px;
+}
+
+/* Transport */
+.transport {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+}
+
+.transport__audio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.transport__filename {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.transport__buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Adjacent transport buttons share the row evenly; a lone Add Audio fills it. */
+.transport__buttons .btn,
+.transport__audio .btn {
+  flex: 1 1 0;
+}
+
+.transport__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+/* Shown below Add Audio while no audio is loaded: audio is required (YARG won't
+   play a stem-less .sng), so this reads as a blocking warning, not a faint hint. */
+.transport__note--warning {
+  color: var(--accent-red);
+}
+
+/* Shown in place of the warning while a picked audio file is decoding: amber
+   (the app's shared warning hue) signals transient progress, not a blocker. */
+.transport__note--loading {
+  color: #db6e24;
+}
+
+/* The Errors section's header — red, matching the blocking-error hue. */
+.settings-label--error {
+  color: var(--accent-red);
+}
+
+.transport__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.transport__field .text-input {
+  width: 100%;
+}
+
+.transport__field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.transport__field--inline .text-input {
+  width: 96px;
+}
+
+/* Metadata form */
+.metadata-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+}
+
+.metadata-field {
+  display: grid;
+  grid-template-columns: var(--label-col) 1fr;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.metadata-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.metadata-field__req {
+  color: var(--accent-red);
+}
+
+.metadata-field .text-input {
+  width: 100%;
+}
+
+.metadata-field__error {
+  grid-column: 2;
+  font-size: 13px;
+  color: var(--accent-red);
+}
+
+.text-input--invalid {
+  border-color: var(--accent-red);
+}
+
+.text-input--invalid:focus {
+  outline-color: var(--accent-red);
+  border-color: var(--accent-red);
+}
+
+/* Aggregated warnings review */
+/* Save */
+.save-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+}
+
+.save-section__dir {
+  display: grid;
+  grid-template-columns: var(--label-col) 1fr;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.save-section__filename {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.save-section__filename--success {
+  color: var(--accent-green);
+}
+
+/* Finalize step: metadata form + save destination, full-width like other pages */
+.finalize {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* Shared width of the inline label column for metadata + "Saving to" rows */
+  --label-col: 160px;
+}
+
+/* Gem context menu (Preview) */
+.gem-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 240px;
+  padding: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-raised);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.gem-menu__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.gem-menu__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.gem-menu__close {
+  margin-left: auto; /* push the X to the far right, after the title */
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gem-menu__close:hover {
+  color: var(--accent-red);
+  background: var(--bg-raised);
+}
+
+/* Full-width, ~50% taller than btn--small (uses the base .btn height). Shared by
+   the Delete button. */
+.gem-menu__action-btn {
+  width: 100%;
+}
+
+.gem-menu__reassign {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gem-menu__scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.gem-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.gem-menu__target {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  background: var(--bg-raised);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.gem-menu__target:hover {
+  border-color: var(--accent-blue);
+}
+
+.gem-menu__spacer {
+  /* Blank top-right grid cell so column 4 aligns; non-interactive. */
+  pointer-events: none;
+}
+
+/* Cymbal color chips: the active/selected chip and any hovered chip take their
+   YARG lane color (docs/DESIGN.md → MIDI map component). Keep hexes in sync with
+   NOTE_COLORS. */
+.cymbal-chip--yellow.cymbal-chip--active,
+.cymbal-chip--yellow:hover { background: #debc31; border-color: #debc31; color: #1a1a1a; }
+.cymbal-chip--blue.cymbal-chip--active,
+.cymbal-chip--blue:hover { background: #3f90e0; border-color: #3f90e0; color: #1a1a1a; }
+.cymbal-chip--green.cymbal-chip--active,
+.cymbal-chip--green:hover { background: #93b52b; border-color: #93b52b; color: #1a1a1a; }
+.cymbal-priority .cymbal-chip { cursor: grab; touch-action: none; }
+
+/* Action Log (docs/DESIGN.md → Chart preview → Action Log) */
+/* A touch more vertical padding than the sibling transport cards (+4px height). */
+.transport.action-log {
+  padding: 18px 16px;
+}
+
+.action-log__hint,
+.action-log__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.action-log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action-log__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-soft);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.action-log__row:hover {
+  background: var(--accent-red);
+  color: var(--text-on-accent);
+}
+
+.action-log__text {
+  white-space: nowrap;
+}

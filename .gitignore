@@ -1,0 +1,34 @@
+node_modules/
+out/
+dist/
+build/
+
+# Dev-mode persistence: app-written global MIDI map + settings under `npm run dev`
+# (resolveDataDir → dev-data). Runtime state, not source — see docs/DESIGN.md.
+dev-data/
+# Agent operating instructions & design/reference docs — local-only, not part of
+# source history (all of docs/ exists solely to aid Claude Code agents)
+CLAUDE.md
+docs/
+.claude/
+
+# Brainstorming visual-companion scratch (local-only)
+.superpowers/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# External reference material — kept locally as read-only reference, not owned by this repo
+references/
