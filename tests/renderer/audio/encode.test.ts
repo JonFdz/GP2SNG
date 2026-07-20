@@ -16,7 +16,11 @@ function tone(sampleRate: number, seconds: number): Float32Array[] {
 
 describe('encodeOggVorbis', () => {
   it('produces a well-formed Ogg stream', async () => {
-    const bytes = await encodeOggVorbis(tone(48000, 1), 48000);
+    // CHUNK_SAMPLES is 48000 (1 s); 3 s of input drives the chunk loop through
+    // several iterations, exercising the subarray(offset, end) boundary math and
+    // the copy-before-next-encode() invariant — the only path every real song
+    // (always multi-chunk) actually takes.
+    const bytes = await encodeOggVorbis(tone(48000, 3), 48000);
 
     expect(bytes.length).toBeGreaterThan(1000);
     // "OggS" capture pattern on the first page.
