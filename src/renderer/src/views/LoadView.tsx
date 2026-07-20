@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { parseGp } from '../../../shared/gp/index';
+import { readSngSession } from '../../../shared/sng/index';
 import { detectDrumTrack } from '../state/detectDrumTrack';
 import { hasSectionNames } from '../state/hasSectionNames';
 import { useWizardStore } from '../state/wizardStore';
@@ -14,6 +15,7 @@ export function LoadView() {
   const score = useWizardStore((s) => s.score);
   const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
   const loadScore = useWizardStore((s) => s.loadScore);
+  const restoreSession = useWizardStore((s) => s.restoreSession);
   const selectTrack = useWizardStore((s) => s.selectTrack);
   const reset = useWizardStore((s) => s.reset);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +43,31 @@ export function LoadView() {
     }
   }
 
+  async function handleLoadSng() {
+    setError(null);
+    setBusy(true);
+    try {
+      const picked = await window.gp2sng.loadSngFile();
+      if (picked === null) return; // user cancelled the dialog — silent
+      const { blob, audioBytes, audioExtension } = readSngSession(picked.bytes);
+      // Parsed here rather than in shared/sng for the same reason a fresh GP file is
+      // parsed in the renderer: parse errors belong in the runtime that shows them.
+      const parsed = parseGp(blob.gpBytes);
+      restoreSession({
+        gpFilePath: blob.gpFilePath,
+        gpFileBytes: blob.gpBytes,
+        score: parsed,
+        blob,
+        audioBytes,
+        audioExtension,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That .sng could not be opened.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const fileName = gpFilePath?.split(/[\\/]/).pop() ?? gpFilePath;
   const selected = score?.tracks.find((t) => t.id === selectedTrackId);
   const noteless = selected !== undefined && selected.noteCount === 0;
@@ -60,6 +87,14 @@ export function LoadView() {
       </button>
 
       {error && <div className="error-banner">{error}</div>}
+
+      <section className="settings-section">
+        <div className="settings-label">Load prior GP2SNG conversion</div>
+        <p className="view-hint">Load a prior .sng file generated via GP2SNG and edit it.</p>
+        <button type="button" className="btn" onClick={handleLoadSng} disabled={busy}>
+          Load .sng file
+        </button>
+      </section>
 
       {score && (
         <div className="load-summary">

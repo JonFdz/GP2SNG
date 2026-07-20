@@ -25,6 +25,17 @@ export function registerIpcHandlers(): void {
     return { path, bytes: new Uint8Array(await readFile(path)) };
   });
 
+  ipcMain.handle('loadSngFile', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Load prior GP2SNG conversion',
+      properties: ['openFile'],
+      filters: [{ name: 'GP2SNG chart', extensions: ['sng'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const path = result.filePaths[0];
+    return { path, bytes: new Uint8Array(await readFile(path)) };
+  });
+
   ipcMain.handle('chooseOutputDir', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Choose output directory',

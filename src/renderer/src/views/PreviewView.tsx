@@ -76,6 +76,8 @@ export function PreviewView() {
   const chart = useWizardStore((s) => s.chart);
   const warnings = useWizardStore((s) => s.warnings);
   const audioBuffer = useWizardStore((s) => s.audioBuffer);
+  const audioBytes = useWizardStore((s) => s.audioBytes);
+  const audioExtension = useWizardStore((s) => s.audioExtension);
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
   const viewTime = useWizardStore((s) => s.viewTime);
   const pixelsPerSecond = useWizardStore((s) => s.pixelsPerSecond);
@@ -135,6 +137,31 @@ export function PreviewView() {
 
   // Dispose the AudioContext when leaving the step.
   useEffect(() => () => schedulerRef.current?.dispose(), []);
+
+  // A restored session arrives with source bytes but no decoded buffer: the
+  // AudioContext lives here, not on the Load step. Decode once on entry; the
+  // existing setBuffer effect picks the result up from the store.
+  useEffect(() => {
+    if (audioBytes === null || audioBuffer !== null) return;
+    const scheduler = schedulerRef.current;
+    if (scheduler === null) return;
+    const bytes = audioBytes;
+    const extension = audioExtension ?? 'ogg';
+    let cancelled = false;
+    void (async () => {
+      try {
+        // decodeAudioData detaches its input, so hand it a copy and keep the
+        // source bytes the writer bundles.
+        const decoded = await scheduler.decode(bytes.slice().buffer);
+        if (!cancelled) setAudio({ buffer: decoded, bytes, extension });
+      } catch {
+        if (!cancelled) setAudioError('Could not decode the audio bundled in this .sng.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [audioBytes, audioBuffer, audioExtension, setAudio]);
 
   const displayed = useMemo(
     () => (chart === null ? [] : displayedNotes(chart.notes, overrides, deletions)),

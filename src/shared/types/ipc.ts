@@ -8,6 +8,9 @@ export type LoadResult<T> = { value: T; failedToLoad: boolean };
 
 export type Gp2SngApi = {
   loadGpFile: () => Promise<{ path: string; bytes: Uint8Array } | null>;
+  // Pick a previously exported .sng to reopen for editing. Same shape as
+  // loadGpFile: main reads the bytes, the renderer does all the decoding.
+  loadSngFile: () => Promise<{ path: string; bytes: Uint8Array } | null>;
   chooseOutputDir: () => Promise<string | null>;
   // Whether dir/filename already exists (drives the Save overwrite-confirm modal,
   // docs/DESIGN.md → UI top-level structure → Save).

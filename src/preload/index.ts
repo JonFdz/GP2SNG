@@ -3,6 +3,7 @@ import type { Gp2SngApi } from '../shared/types/index';
 
 const api: Gp2SngApi = {
   loadGpFile: () => ipcRenderer.invoke('loadGpFile'),
+  loadSngFile: () => ipcRenderer.invoke('loadSngFile'),
   chooseOutputDir: () => ipcRenderer.invoke('chooseOutputDir'),
   pathExists: (dir, filename) => ipcRenderer.invoke('pathExists', dir, filename),
   writeSng: (dir, filename, bytes) => ipcRenderer.invoke('writeSng', dir, filename, bytes),
