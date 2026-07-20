@@ -19,6 +19,10 @@ import {
   type YargChart,
 } from '../../../src/shared/types/index';
 
+function reparse(blob: SessionBlob): Record<string, unknown> {
+  return JSON.parse(new TextDecoder().decode(encodeSessionBlob(blob)));
+}
+
 const chart: YargChart = {
   resolution: 480,
   tempoMap: [{ tick: 0, usPerQuarter: 500000 }],
@@ -71,6 +75,20 @@ describe('session blob codec', () => {
     expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
   });
 
+  it('refuses a blob with no version field at all as corrupt, not "different version"', () => {
+    const parsed = reparse(sampleBlob());
+    delete parsed.version;
+    const bytes = new TextEncoder().encode(JSON.stringify(parsed));
+    let thrown: unknown;
+    try {
+      decodeSessionBlob(bytes);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(SessionRestoreError);
+    expect((thrown as SessionRestoreError).message).not.toMatch(/different version/);
+  });
+
   it('refuses malformed JSON', () => {
     const bytes = new TextEncoder().encode('{ not json');
     expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
@@ -86,6 +104,21 @@ describe('session blob codec', () => {
   it('refuses a blob whose gpFileBase64 is not valid base64', () => {
     const parsed = JSON.parse(new TextDecoder().decode(encodeSessionBlob(sampleBlob())));
     parsed.gpFileBase64 = 'not-valid-base64!!!';
+    const bytes = new TextEncoder().encode(JSON.stringify(parsed));
+    expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
+  });
+
+  it('refuses a blob whose chart has no array notes, instead of crashing rendering later', () => {
+    const parsed = reparse(sampleBlob());
+    parsed.chart = 'not a chart';
+    const bytes = new TextEncoder().encode(JSON.stringify(parsed));
+    expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
+  });
+
+  it('refuses a blob whose sessionMap is missing a YARG_NOTE_IDS row', () => {
+    const parsed = reparse(sampleBlob());
+    const map = parsed.sessionMap as Record<string, unknown>;
+    delete map.greenTomAccented;
     const bytes = new TextEncoder().encode(JSON.stringify(parsed));
     expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
   });
@@ -123,6 +156,16 @@ describe('readSngSession', () => {
   it('refuses a .sng with no bundled audio', () => {
     const noAudio = writeSng(chart, metadata, undefined, 0, sampleBlob());
     expect(() => readSngSession(noAudio)).toThrow(SessionRestoreError);
+  });
+
+  // Regression: the reader used to whitelist mp3/ogg/opus/wav, but the Preview
+  // picker's `audio/*` accept clause lets the browser decode (and the writer emit)
+  // other extensions too — e.g. flac. A GP2SNG-produced .sng must still reopen.
+  it('reopens a .sng whose bundled audio extension is outside the original four', () => {
+    const flac = { bytes: new Uint8Array([9, 8, 7, 6]), extension: 'flac' };
+    const restored = readSngSession(writeSng(chart, metadata, flac, -120, sampleBlob()));
+    expect(restored.audioExtension).toBe('flac');
+    expect(Array.from(restored.audioBytes)).toEqual([9, 8, 7, 6]);
   });
 
   it('refuses bytes that are not a .sng at all', () => {

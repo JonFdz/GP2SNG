@@ -86,8 +86,6 @@ export function LoadView() {
         {score ? 'Load a different file' : 'Load GP file'}
       </button>
 
-      {error && <div className="error-banner">{error}</div>}
-
       <section className="settings-section">
         <div className="settings-label">Load prior GP2SNG conversion</div>
         <p className="view-hint">Load a prior .sng file generated via GP2SNG and edit it.</p>
@@ -95,6 +93,8 @@ export function LoadView() {
           Load .sng file
         </button>
       </section>
+
+      {error && <div className="error-banner">{error}</div>}
 
       {score && (
         <div className="load-summary">

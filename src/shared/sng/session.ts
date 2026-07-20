@@ -3,6 +3,7 @@ import {
   SESSION_BLOB_VERSION,
   type SessionBlob,
   SessionRestoreError,
+  YARG_NOTE_IDS,
 } from '../types/index';
 import { readSng } from './container';
 
@@ -60,6 +61,9 @@ export function decodeSessionBlob(bytes: Uint8Array): SessionBlob {
   }
   if (parsed === null || typeof parsed !== 'object') throw new SessionRestoreError(CORRUPT);
 
+  // An absent version is a corrupt/foreign blob, not "a different version" — that
+  // message implies a recognizable-but-mismatched blob, which this isn't.
+  if (!('version' in parsed)) throw new SessionRestoreError(CORRUPT, { missing: 'version' });
   if (parsed.version !== SESSION_BLOB_VERSION) {
     throw new SessionRestoreError(
       'This .sng was made by a different version of GP2SNG. Re-convert it from the original Guitar Pro file.',
@@ -68,6 +72,23 @@ export function decodeSessionBlob(bytes: Uint8Array): SessionBlob {
   }
   for (const member of REQUIRED_MEMBERS) {
     if (!(member in parsed)) throw new SessionRestoreError(CORRUPT, { missing: member });
+  }
+  // Presence-only validation would let a malformed `chart`/`sessionMap` crash the
+  // renderer deep inside rendering instead of refusing here (there is no error
+  // boundary), so these two members — the ones whose malformation crashes rendering
+  // — get a shape check. Not a general schema validator: everything else is trusted
+  // once present.
+  const chartCandidate = parsed.chart as { notes?: unknown } | null;
+  if (chartCandidate === null || !Array.isArray(chartCandidate.notes)) {
+    throw new SessionRestoreError(CORRUPT, { missing: 'chart.notes' });
+  }
+  const mapCandidate = parsed.sessionMap as Record<string, unknown> | null;
+  if (
+    mapCandidate === null ||
+    typeof mapCandidate !== 'object' ||
+    !YARG_NOTE_IDS.every((id) => id in mapCandidate)
+  ) {
+    throw new SessionRestoreError(CORRUPT, { missing: 'sessionMap row' });
   }
 
   const { gpFileBase64, ...rest } = parsed as unknown as Omit<SessionBlob, 'gpBytes'> & {
@@ -82,8 +103,13 @@ export function decodeSessionBlob(bytes: Uint8Array): SessionBlob {
   return { ...rest, gpBytes };
 }
 
-// A .sng bundles exactly one full-mix stem under one of these extensions.
-const AUDIO_FILE = /^song\.(mp3|ogg|opus|wav)$/;
+// A .sng bundles exactly one full-mix stem as song.<ext>. Match the writer's shape
+// rather than a fixed extension list: the Preview file picker's `audio/*` accept
+// clause admits formats (flac, m4a, aac, oga) beyond the four GP2SNG names in its
+// own filter, so writeSng can emit any extension the browser decoded. A second,
+// narrower list here would silently make those GP2SNG-produced .sng files
+// unreopenable.
+const AUDIO_FILE = /^song\.[^.]+$/;
 
 export interface RestoredSession {
   blob: SessionBlob;
