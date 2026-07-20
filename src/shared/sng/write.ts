@@ -16,18 +16,6 @@ function randomMask(): Uint8Array {
   return m;
 }
 
-// The SNG `delay` value. Audio position at chart time t is t + delay/1000 (YARG
-// SongRunner.SetSongTime; mirrored by the preview's computeAudioStart), so a chart
-// with a lead-in needs a NEGATIVE delay to hold the audio until the music starts.
-// Sole owner of this sign: chart and audio drifting apart by a whole lead-in is
-// silent and only reproducible in YARG.
-export function sngDelayMs(chart: YargChart, audioOffsetMs: number): number {
-  return (
-    audioOffsetMs -
-    Math.round(tickToSeconds(chart.leadInTicks, chart.tempoMap, chart.resolution) * 1000)
-  );
-}
-
 export function writeSng(
   chart: YargChart,
   metadata: SongMetadata,
@@ -62,7 +50,7 @@ export function writeSng(
     ['genre', metadata.genre],
     ['year', metadata.year],
     ['song_length', String(songLengthMs)],
-    ['delay', String(sngDelayMs(chart, offsetMs))],
+    ['delay', String(offsetMs)],
     ['pro_drums', 'True'],
     ['diff_drums', diff],
     ['diff_drums_real', diff],

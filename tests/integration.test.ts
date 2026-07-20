@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { convertToYargChart, tickToSeconds } from '../src/shared/convert/index';
 import { parseGp } from '../src/shared/gp/index';
 import { applyRemap } from '../src/shared/midi/index';
-import { readMidi, readSng, readSngSession, sngDelayMs, writeSng } from '../src/shared/sng/index';
+import { readMidi, readSng, readSngSession, writeSng } from '../src/shared/sng/index';
 import {
   DEFAULT_CONVERSION_SETTINGS,
   DEFAULT_MIDI_MAP,
@@ -89,11 +89,10 @@ describe('GP → SNG pipeline (integration)', () => {
       pro_drums: 'True',
       diff_drums: '5',
       diff_drums_real: '5',
-      // The -120 ms user offset composes with the lead-in, which holds the audio
-      // back with a negative delay (docs/DESIGN.md → Timing model → Lead-in).
-      delay: String(sngDelayMs(chart, -120)),
+      // delay carries only the user's A/V offset; the lead-in lives in the bundled
+      // audio, not in this metadata key (docs/DESIGN.md → Timing model → Lead-in).
+      delay: '-120',
     });
-    expect(Number(sng.metadata.delay)).toBeLessThan(-120); // the lead-in pushed it further back
     const songLength = Number(sng.metadata.song_length);
     expect(Number.isInteger(songLength)).toBe(true);
     // song_length spans the lead-in as well as the music.

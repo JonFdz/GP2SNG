@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readMidi, readSng, sngDelayMs, writeSng } from '../../../src/shared/sng/index';
+import { readMidi, readSng, writeSng } from '../../../src/shared/sng/index';
 import {
   DEFAULT_CONVERSION_SETTINGS,
   DEFAULT_MIDI_MAP,
@@ -68,40 +68,27 @@ describe('writeSng', () => {
     expect(midi.tracks.find((t) => t.name === 'PART DRUMS')?.notes).toHaveLength(1);
   });
 
-  it('bundles audio at the song.<ext> slot with the delay offset', () => {
-    const audio = { bytes: Uint8Array.from([9, 8, 7]), extension: 'OGG' };
-    const sng = readSng(writeSng(chart, meta, audio, -250, session()));
-    expect([...sng.files['song.ogg']]).toEqual([9, 8, 7]); // filename lowercased
-    expect(sng.metadata.delay).toBe('-250');
-  });
-
   it('throws when name or artist is missing', () => {
     expect(() => writeSng(chart, { ...meta, name: '' }, undefined, 0, session())).toThrow(
       /required/,
     );
   });
-});
 
-describe('sngDelayMs', () => {
-  // One 4/4 bar of lead-in at 120 BPM = 2000 ms.
-  const leadIn: YargChart = { ...chart, leadInTicks: 1920, endTick: 3840 };
+  it('writes delay as the audio offset alone, never the lead-in', () => {
+    // The bug this replaced: delay was `offsetMs - leadInMs`, which cancels out of
+    // YARG's runway entirely (gameplay starts 2 s before audio position zero, so
+    // shifting chart and audio together buys nothing). Lead-in silence now lives in
+    // the audio, so delay carries only the user's A/V calibration.
+    const withLeadIn: YargChart = { ...chart, leadInTicks: 3840 };
+    const sng = readSng(writeSng(withLeadIn, meta, undefined, -120, session()));
 
-  it('holds the audio back by the lead-in at a zero offset', () => {
-    expect(sngDelayMs(leadIn, 0)).toBe(-2000);
+    expect(sng.metadata.delay).toBe('-120');
   });
 
-  it('composes additively with the user audio offset, both signs', () => {
-    expect(sngDelayMs(leadIn, 150)).toBe(-1850);
-    expect(sngDelayMs(leadIn, -150)).toBe(-2150);
-  });
+  it('writes delay 0 when the user set no offset', () => {
+    const withLeadIn: YargChart = { ...chart, leadInTicks: 3840 };
+    const sng = readSng(writeSng(withLeadIn, meta, undefined, 0, session()));
 
-  it('is the plain offset when there is no lead-in', () => {
-    expect(sngDelayMs(chart, -120)).toBe(-120);
-  });
-
-  it('writes that value as delay, with a song_length covering the lead-in', () => {
-    const sng = readSng(writeSng(leadIn, meta, undefined, 0, session()));
-    expect(sng.metadata.delay).toBe('-2000');
-    expect(sng.metadata.song_length).toBe('4000');
+    expect(sng.metadata.delay).toBe('0');
   });
 });

@@ -4,4 +4,4 @@ export { readMidi } from './midi-read';
 export { buildMidi } from './midi-write';
 export type { RestoredSession } from './session';
 export { decodeSessionBlob, encodeSessionBlob, readSngSession } from './session';
-export { sngDelayMs, writeSng } from './write';
+export { writeSng } from './write';

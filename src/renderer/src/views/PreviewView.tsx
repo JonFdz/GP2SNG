@@ -14,8 +14,8 @@ import {
   STANDARD_DRUM_MIDI_NAMES,
   splitYargNoteId,
 } from '../../../shared/midi/index';
-import { sngDelayMs } from '../../../shared/sng/index';
 import type { YargNote, YargNoteId } from '../../../shared/types/index';
+import { previewAudioOffsetSeconds } from '../audio/index';
 import { ActionLog } from '../components/ActionLog';
 import { AnchoredTooltip, anchorBottomRight } from '../components/AnchoredTooltip';
 import { ChartCanvas } from '../components/ChartCanvas';
@@ -328,7 +328,7 @@ export function PreviewView() {
       stopPlayback(scheduler.currentChartTime());
       return;
     }
-    scheduler.play(viewTime, sngDelayMs(gpChart, audioOffsetMs) / 1000);
+    scheduler.play(viewTime, previewAudioOffsetSeconds(gpChart, audioOffsetMs, audioPaddingMs));
     setIsPlaying(true);
   }
 
@@ -343,7 +343,8 @@ export function PreviewView() {
 
   function handleOffsetChange(ms: number) {
     setAudioOffsetMs(ms);
-    if (scheduler.isPlaying) scheduler.reanchor(sngDelayMs(gpChart, ms) / 1000);
+    if (scheduler.isPlaying)
+      scheduler.reanchor(previewAudioOffsetSeconds(gpChart, ms, audioPaddingMs));
   }
 
   function seekTo(t: number) {

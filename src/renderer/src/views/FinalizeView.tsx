@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { tickToSeconds } from '../../../shared/convert/index';
 import { writeSng } from '../../../shared/sng/index';
 import type { YargChart } from '../../../shared/types/index';
+import { resolveExportAudio } from '../audio/index';
 import { MetadataForm } from '../components/MetadataForm';
 import { displayedNotes } from '../playback/overrides';
 import { defaultMetadata, isMetadataValid, metadataErrors } from '../state/metadata';
@@ -27,8 +29,8 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const overrides = useWizardStore((s) => s.overrides);
   const deletions = useWizardStore((s) => s.deletions);
   const metadata = useWizardStore((s) => s.metadata);
+  const audioBuffer = useWizardStore((s) => s.audioBuffer);
   const audioBytes = useWizardStore((s) => s.audioBytes);
-  const audioExtension = useWizardStore((s) => s.audioExtension);
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
   const audioPaddingMs = useWizardStore((s) => s.audioPaddingMs);
   const setMetadata = useWizardStore((s) => s.setMetadata);
@@ -48,6 +50,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const [pendingSave, setPendingSave] = useState<{ dir: string; filename: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Seed the metadata form from the parsed score on first entry.
   useEffect(() => {
@@ -83,12 +86,27 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
 
   async function doWrite(dir: string, filename: string) {
     setPendingSave(null);
+    setSaving(true);
     try {
       const displayedChart: YargChart = { ...gpChart, notes: displayed };
-      const audio =
-        audioBytes !== null && audioExtension !== null
-          ? { bytes: audioBytes, extension: audioExtension }
-          : undefined;
+      const leadInMs = Math.round(
+        tickToSeconds(gpChart.leadInTicks, gpChart.tempoMap, gpChart.resolution) * 1000,
+      );
+      let audio: { bytes: Uint8Array; extension: string } | undefined;
+      let paddingMs = 0;
+      if (audioBytes !== null && audioBuffer !== null) {
+        const resolved = await resolveExportAudio({
+          bytes: audioBytes,
+          channels: Array.from({ length: audioBuffer.numberOfChannels }, (_, i) =>
+            audioBuffer.getChannelData(i),
+          ),
+          sampleRate: audioBuffer.sampleRate,
+          currentPaddingMs: audioPaddingMs,
+          targetPaddingMs: leadInMs,
+        });
+        audio = { bytes: resolved.bytes, extension: resolved.extension };
+        paddingMs = resolved.paddingMs;
+      }
       const session = buildSessionBlob({
         gpFilePath: filePath,
         gpBytes,
@@ -102,7 +120,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
         previewRemaps,
         metadata: gpMetadata,
         audioOffsetMs,
-        audioPaddingMs,
+        audioPaddingMs: paddingMs,
       });
       const bytes = writeSng(displayedChart, gpMetadata, audio, audioOffsetMs, session);
       await window.gp2sng.writeSng(dir, filename, bytes);
@@ -110,6 +128,8 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       setSaveError(null);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save the .sng file.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -189,9 +209,9 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 type="button"
                 className="btn btn--affirmative"
                 onClick={handleSave}
-                disabled={!isMetadataValid(gpMetadata)}
+                disabled={!isMetadataValid(gpMetadata) || saving}
               >
-                Save
+                {saving ? 'Saving…' : 'Save'}
               </button>
             )}
           </>,
