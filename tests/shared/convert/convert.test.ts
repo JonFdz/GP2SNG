@@ -125,6 +125,23 @@ describe('convertToYargChart — lead-in', () => {
     const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
     expect(c.notes.find((n) => n.note === 'yellowCymbal')?.tick).toBe(c.leadInTicks - 30);
   });
+
+  it('runs the lead-in at the same BPM used to size its bar count, even when the opening bar carries automations out of position order', () => {
+    // Mirrors leadIn.test.ts's openingBpm case: the 140 BPM automation sits at the
+    // earlier position (0) but second in array/document order. openingBpm — which
+    // sizes leadInTicks — picks 140 by position; the tempo the lead-in actually
+    // runs at must agree, not fall back to whichever automation is unshifted from
+    // document order (90).
+    const s = oneBarScore([{ notes: [{ midi: 38 }] }], {
+      tempoAutomations: [
+        { bar: 0, position: 0.5, bpm: 90, linear: false },
+        { bar: 0, position: 0, bpm: 140, linear: false },
+      ],
+    });
+    const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    expect(c.leadInTicks).toBe(2 * 1920); // 140 BPM >= 120 -> 2 bars
+    expect(c.tempoMap[0]).toEqual({ tick: 0, usPerQuarter: Math.round(60000000 / 140) });
+  });
 });
 
 describe('convertToYargChart — warnings & errors', () => {

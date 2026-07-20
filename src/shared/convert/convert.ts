@@ -137,12 +137,15 @@ export function convertToYargChart(
   // The lead-in bars inherit the song's opening time signature so the chart stays
   // bar-aligned (docs/DESIGN.md → Timing model → Lead-in), and their count comes
   // from the chart's own opening tempo and meter per YARN. A score with no played
-  // bars gets none; that path throws for having no notes below anyway.
+  // bars gets none; that path throws for having no notes below anyway. Computed
+  // once and reused below for the tick-0 tempo point, so the lead-in's bar count
+  // and the tempo it actually runs at can never disagree.
   const firstBar = played.length > 0 ? score.masterBars[played[0]] : null;
+  const openingTempo = openingBpm(score.tempoAutomations, played);
   const leadInTicks =
     firstBar === null
       ? 0
-      : leadInBarsFor(firstBar.timeSignature, openingBpm(score.tempoAutomations, played), ppq) *
+      : leadInBarsFor(firstBar.timeSignature, openingTempo, ppq) *
         barTicks(firstBar.timeSignature, ppq);
 
   // "Accent ride bell & open hi-hat" on ⇒ accented yellow/blue cymbals denote open
@@ -259,12 +262,15 @@ export function convertToYargChart(
     barStart += bt;
   }
 
-  // The lead-in runs at the song's opening tempo, not the 120 BPM fallback. A
-  // non-linear point at tick 0 carries it; buildTempoMap drops consecutive equal
-  // tempos, so the now-redundant event at leadInTicks collapses on its own, while a
-  // linear opening point still ramps correctly from leadInTicks.
+  // The lead-in runs at the song's opening tempo, not the 120 BPM fallback — and
+  // not whichever automation happened to come first in document order, which can
+  // disagree with openingTempo (and thus the lead-in's own bar count) when a bar
+  // carries multiple automations stored out of position order. A non-linear point
+  // at tick 0 carries it; buildTempoMap drops consecutive equal tempos, so the
+  // now-redundant event at leadInTicks collapses on its own, while a linear
+  // opening point still ramps correctly from leadInTicks.
   if (leadInTicks > 0 && tempoPoints.length > 0 && tempoPoints[0].tick > 0) {
-    tempoPoints.unshift({ tick: 0, bpm: tempoPoints[0].bpm, linear: false });
+    tempoPoints.unshift({ tick: 0, bpm: openingTempo, linear: false });
   }
 
   const tempoMap = buildTempoMap(tempoPoints);
