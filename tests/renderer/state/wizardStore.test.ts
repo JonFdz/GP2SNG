@@ -45,7 +45,9 @@ function blob(): SessionBlob {
     gpBytes: GP_BYTES,
     selectedTrackId: 3,
     sessionMap: applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom'),
-    sessionSettings: { ...DEFAULT_CONVERSION_SETTINGS },
+    // A non-default value so restoreSession is actually verified to carry the
+    // blob's settings through, not just whatever the store's own DEFAULT_ is.
+    sessionSettings: { ...DEFAULT_CONVERSION_SETTINGS, cymbalGhostNotes: true },
     chart: restoredChart,
     warnings: [],
     overrides: [{ tick: 480, midi: 47, note: 'greenTom', accented: false, seq: 1 }],
@@ -612,6 +614,7 @@ describe('restoreSession', () => {
     expect(s.mapDirty).toBe(false);
     expect(s.settingsDirty).toBe(false);
     expect(s.baselineMap).toEqual(blob().sessionMap);
+    expect(s.sessionSettings).toEqual(blob().sessionSettings);
     expect(s.baselineSettings).toEqual(blob().sessionSettings);
   });
 
