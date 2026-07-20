@@ -15,3 +15,4 @@ export class ConversionError extends Gp2SngError {}
 export class SngWriteError extends Gp2SngError {}
 export class PersistenceError extends Gp2SngError {}
 export class AudioDecodeError extends Gp2SngError {}
+export class SessionRestoreError extends Gp2SngError {}

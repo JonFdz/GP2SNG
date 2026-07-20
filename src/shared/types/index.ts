@@ -5,4 +5,5 @@ export * from './gp';
 export * from './ipc';
 export * from './metadata';
 export * from './midi';
+export * from './session';
 export * from './warnings';
