@@ -87,7 +87,7 @@ export function LoadView() {
       </button>
 
       <section className="settings-section">
-        <div className="settings-label">Load prior GP2SNG conversion</div>
+        <h2 className="view-title">Load prior conversion</h2>
         <p className="view-hint">Load a prior .sng file generated via GP2SNG and edit it.</p>
         <button type="button" className="btn" onClick={handleLoadSng} disabled={busy}>
           Load .sng file
