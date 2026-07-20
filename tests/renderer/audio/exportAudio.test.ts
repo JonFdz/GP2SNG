@@ -55,6 +55,10 @@ describe('repadPcm', () => {
     // 1 s of source - 0.5 s trimmed + 1.5 s padded = 2 s
     const out = repadPcm(channels(), SAMPLE_RATE, 500, 1500);
     expect(out[0].length).toBe(SAMPLE_RATE * 2);
+    // With correct trim→pad order, indices [p−t, p) = [48000, 72000) are silence.
+    // Reversed pad→trim would leak source samples into this window; index 48001
+    // would be 1/48000 instead of 0. This assertion catches the reversal.
+    expect(out[0][48001]).toBe(0);
   });
 
   it('pads from nothing when there is no existing padding', () => {
