@@ -79,6 +79,7 @@ export function PreviewView() {
   const audioBytes = useWizardStore((s) => s.audioBytes);
   const audioExtension = useWizardStore((s) => s.audioExtension);
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
+  const audioPaddingMs = useWizardStore((s) => s.audioPaddingMs);
   const viewTime = useWizardStore((s) => s.viewTime);
   const pixelsPerSecond = useWizardStore((s) => s.pixelsPerSecond);
   const overrides = useWizardStore((s) => s.overrides);
@@ -153,7 +154,7 @@ export function PreviewView() {
         // decodeAudioData detaches its input, so hand it a copy and keep the
         // source bytes the writer bundles.
         const decoded = await scheduler.decode(bytes.slice().buffer);
-        if (!cancelled) setAudio({ buffer: decoded, bytes, extension });
+        if (!cancelled) setAudio({ buffer: decoded, bytes, extension, paddingMs: audioPaddingMs });
       } catch {
         if (!cancelled) setAudioError('Could not decode the audio bundled in this .sng.');
       }
@@ -161,7 +162,7 @@ export function PreviewView() {
     return () => {
       cancelled = true;
     };
-  }, [audioBytes, audioBuffer, audioExtension, setAudio]);
+  }, [audioBytes, audioBuffer, audioExtension, audioPaddingMs, setAudio]);
 
   const displayed = useMemo(
     () => (chart === null ? [] : displayedNotes(chart.notes, overrides, deletions)),
@@ -410,7 +411,7 @@ export function PreviewView() {
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf.slice(0)); // keep source bytes; decode detaches buf
       const decoded = await scheduler.decode(buf);
-      setAudio({ buffer: decoded, bytes, extension: extensionOf(file.name) });
+      setAudio({ buffer: decoded, bytes, extension: extensionOf(file.name), paddingMs: 0 });
     } catch {
       setAudioError('Could not decode that audio file. Pick a different file.');
     } finally {

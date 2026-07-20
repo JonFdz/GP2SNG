@@ -45,6 +45,7 @@ function session(): SessionBlob {
     previewRemaps: [],
     metadata: meta,
     audioOffsetMs: 0,
+    audioPaddingMs: 0,
   };
 }
 

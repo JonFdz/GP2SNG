@@ -30,6 +30,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const audioBytes = useWizardStore((s) => s.audioBytes);
   const audioExtension = useWizardStore((s) => s.audioExtension);
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
+  const audioPaddingMs = useWizardStore((s) => s.audioPaddingMs);
   const setMetadata = useWizardStore((s) => s.setMetadata);
   const reset = useWizardStore((s) => s.reset);
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
@@ -101,6 +102,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
         previewRemaps,
         metadata: gpMetadata,
         audioOffsetMs,
+        audioPaddingMs,
       });
       const bytes = writeSng(displayedChart, gpMetadata, audio, audioOffsetMs, session);
       await window.gp2sng.writeSng(dir, filename, bytes);

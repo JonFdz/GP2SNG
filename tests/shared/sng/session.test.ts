@@ -59,6 +59,7 @@ function sampleBlob(): SessionBlob {
     previewRemaps: [{ midi: 51, from: 'blueCymbal', to: 'greenCymbal', seq: 3 }],
     metadata,
     audioOffsetMs: -120,
+    audioPaddingMs: 0,
   };
 }
 
@@ -120,6 +121,21 @@ describe('session blob codec', () => {
     const map = parsed.sessionMap as Record<string, unknown>;
     delete map.greenTomAccented;
     const bytes = new TextEncoder().encode(JSON.stringify(parsed));
+    expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
+  });
+
+  it('round-trips audioPaddingMs', () => {
+    const blob: SessionBlob = { ...sampleBlob(), audioPaddingMs: 2909 };
+    const decoded = decodeSessionBlob(encodeSessionBlob(blob));
+
+    expect(decoded.audioPaddingMs).toBe(2909);
+  });
+
+  it('refuses a blob with no audioPaddingMs', () => {
+    const raw = reparse(sampleBlob());
+    delete raw.audioPaddingMs;
+    const bytes = new TextEncoder().encode(JSON.stringify(raw));
+
     expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
   });
 });

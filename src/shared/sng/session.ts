@@ -23,6 +23,7 @@ const REQUIRED_MEMBERS: readonly string[] = [
   'previewRemaps',
   'metadata',
   'audioOffsetMs',
+  'audioPaddingMs',
 ];
 
 const CORRUPT =

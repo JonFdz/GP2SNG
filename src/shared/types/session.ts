@@ -11,7 +11,7 @@ export const SESSION_BLOB_FILENAME = 'gp2sng.json';
 
 // Bumped whenever this shape changes. Per the project's no-legacy rule there is no
 // migration path: a mismatch is refused and the user re-converts from the GP file.
-export const SESSION_BLOB_VERSION = 1;
+export const SESSION_BLOB_VERSION = 2;
 
 export interface SessionBlob {
   version: number;
@@ -29,4 +29,8 @@ export interface SessionBlob {
   previewRemaps: PreviewRemap[];
   metadata: SongMetadata;
   audioOffsetMs: number;
+  // Milliseconds of silence already prepended to the bundled audio. Lets a reopened
+  // .sng be re-exported without re-encoding: the writer only touches the audio when
+  // the padding it needs differs from the padding it has.
+  audioPaddingMs: number;
 }

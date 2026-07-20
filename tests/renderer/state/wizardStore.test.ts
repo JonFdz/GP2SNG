@@ -61,6 +61,7 @@ function blob(): SessionBlob {
       drumsDifficulty: 4,
     },
     audioOffsetMs: -120,
+    audioPaddingMs: 250,
   };
 }
 
@@ -351,6 +352,19 @@ describe('wizardStore preview state', () => {
     expect(s.viewTime).toBe(0);
   });
 
+  test('setAudio stores the padding it is given; clearAudio resets it to zero', () => {
+    useWizardStore.getState().setAudio({
+      buffer: {} as AudioBuffer,
+      bytes: new Uint8Array([1]),
+      extension: 'ogg',
+      paddingMs: 500,
+    });
+    expect(useWizardStore.getState().audioPaddingMs).toBe(500);
+
+    useWizardStore.getState().clearAudio();
+    expect(useWizardStore.getState().audioPaddingMs).toBe(0);
+  });
+
   test('selecting a different track clears chart-derived preview state', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
     useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc);
@@ -587,6 +601,7 @@ describe('restoreSession', () => {
     expect(s.previewRemaps).toEqual(blob().previewRemaps);
     expect(s.metadata).toEqual(blob().metadata);
     expect(s.audioOffsetMs).toBe(-120);
+    expect(s.audioPaddingMs).toBe(250);
     expect(s.audioExtension).toBe('ogg');
     expect(Array.from(s.audioBytes ?? [])).toEqual([9, 9, 9]);
   });

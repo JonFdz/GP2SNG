@@ -54,6 +54,7 @@ describe('buildSessionBlob', () => {
       previewRemaps: [],
       metadata,
       audioOffsetMs: -120,
+      audioPaddingMs: 0,
     });
     expect(blob.version).toBe(SESSION_BLOB_VERSION);
     expect(blob.chart).toBe(rawChart);
@@ -95,6 +96,7 @@ describe('buildSessionBlob', () => {
       previewRemaps: [],
       metadata,
       audioOffsetMs: 0,
+      audioPaddingMs: 0,
     });
 
     const audio = { bytes: new Uint8Array([1, 2, 3, 4]), extension: 'ogg' };
