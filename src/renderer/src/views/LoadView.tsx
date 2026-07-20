@@ -73,20 +73,23 @@ export function LoadView() {
 
   return (
     <div>
-      <h1 className="view-title">Load Guitar Pro file</h1>
-      <p className="view-hint">Select a .gp file to convert. Only its drum track is used.</p>
-
-      <button
-        type="button"
-        className={score ? 'btn' : 'btn btn--primary'}
-        onClick={handleLoad}
-        disabled={busy}
-      >
-        {score ? 'Load a different file' : 'Load GP file'}
-      </button>
+      <h1 className="view-title">Select a file to load</h1>
 
       <section className="settings-section">
-        <h2 className="view-title">Load prior conversion</h2>
+        <div className="settings-label">Guitar Pro file</div>
+        <p className="view-hint">Select a .gp file to convert. Only its drum track is used.</p>
+        <button
+          type="button"
+          className={score ? 'btn' : 'btn btn--primary'}
+          onClick={handleLoad}
+          disabled={busy}
+        >
+          {score ? 'Load a different file' : 'Load GP file'}
+        </button>
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-label">Prior GP2SNG conversion</div>
         <p className="view-hint">Load a prior .sng file generated via GP2SNG and edit it.</p>
         <button type="button" className="btn" onClick={handleLoadSng} disabled={busy}>
           Load .sng file
@@ -96,60 +99,62 @@ export function LoadView() {
       {error && <div className="error-banner">{error}</div>}
 
       {score && (
-        <div className="load-summary">
-          <div className="load-summary__file">{fileName}</div>
-          <div className="load-summary__meta">
-            {score.metadata.title || '(untitled)'} — {score.metadata.artist || '(unknown artist)'}
-          </div>
-          <div className="load-summary__meta">
-            {score.tracks.length} track{score.tracks.length === 1 ? '' : 's'}
-          </div>
-        </div>
-      )}
+        <section className="settings-section">
+          <div className="settings-label">File Information</div>
 
-      {score && !hasSectionNames(score.masterBars) && (
-        <div className="warning-banner">
-          <span className="warning-icon">⚠</span>
-          <span className="warning-text">
-            No section names detected in this tab. Consider adding section names in Guitar Pro (via
-            Shift+Ins) and reloading to assist with Practice mode navigation in YARG
-          </span>
-        </div>
-      )}
-
-      {score && (
-        <section className="track-select">
-          <p className="view-hint">
-            GP2SNG picked the drum track with the most notes. Choose a different track if this is
-            wrong.
-          </p>
-
-          <div className="track-list">
-            {score.tracks.map((track) => (
-              <button
-                type="button"
-                key={track.id}
-                className={
-                  track.id === selectedTrackId ? 'track-row track-row--selected' : 'track-row'
-                }
-                onClick={() => selectTrack(track.id)}
-              >
-                <span className="track-row__name">{track.name || `Track ${track.id}`}</span>
-                <span className="track-row__meta">
-                  {track.isDrumKit && <span className="track-tag">Drums</span>}
-                  <span className="track-row__count">
-                    {track.noteCount} note{track.noteCount === 1 ? '' : 's'}
-                  </span>
-                </span>
-              </button>
-            ))}
+          <div className="load-summary">
+            <div className="load-summary__file">{fileName}</div>
+            <div className="load-summary__meta">
+              {score.metadata.title || '(untitled)'} — {score.metadata.artist || '(unknown artist)'}
+            </div>
+            <div className="load-summary__meta">
+              {score.tracks.length} track{score.tracks.length === 1 ? '' : 's'}
+            </div>
           </div>
 
-          {noteless && (
-            <div className="error-banner">
-              This track has no notes. Select a track that contains notes to continue.
+          {!hasSectionNames(score.masterBars) && (
+            <div className="warning-banner">
+              <span className="warning-icon">⚠</span>
+              <span className="warning-text">
+                No section names detected in this tab. Consider adding section names in Guitar Pro
+                (via Shift+Ins) and reloading to assist with Practice mode navigation in YARG
+              </span>
             </div>
           )}
+
+          <div className="track-select">
+            <p className="view-hint">
+              GP2SNG picked the drum track with the most notes. Choose a different track if this is
+              wrong.
+            </p>
+
+            <div className="track-list">
+              {score.tracks.map((track) => (
+                <button
+                  type="button"
+                  key={track.id}
+                  className={
+                    track.id === selectedTrackId ? 'track-row track-row--selected' : 'track-row'
+                  }
+                  onClick={() => selectTrack(track.id)}
+                >
+                  <span className="track-row__name">{track.name || `Track ${track.id}`}</span>
+                  <span className="track-row__meta">
+                    {track.isDrumKit && <span className="track-tag">Drums</span>}
+                    <span className="track-row__count">
+                      {track.noteCount} note{track.noteCount === 1 ? '' : 's'}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {noteless && (
+              <div className="error-banner">
+                This track has no notes. Select a track that contains notes to continue.
+              </div>
+            )}
+          </div>
         </section>
       )}
     </div>
