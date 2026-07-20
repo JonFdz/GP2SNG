@@ -40,11 +40,6 @@ import { useWizardStore } from '../state/wizardStore';
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-function extensionOf(filename: string): string {
-  const dot = filename.lastIndexOf('.');
-  return dot === -1 ? 'ogg' : filename.slice(dot + 1).toLowerCase();
-}
-
 // The source file's name without its directory or extension, for the transport title.
 function baseNameOf(path: string): string {
   const name = path.split(/[\\/]/).pop() ?? path;
@@ -77,7 +72,6 @@ export function PreviewView() {
   const warnings = useWizardStore((s) => s.warnings);
   const audioBuffer = useWizardStore((s) => s.audioBuffer);
   const audioBytes = useWizardStore((s) => s.audioBytes);
-  const audioExtension = useWizardStore((s) => s.audioExtension);
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
   const audioPaddingMs = useWizardStore((s) => s.audioPaddingMs);
   const viewTime = useWizardStore((s) => s.viewTime);
@@ -147,14 +141,13 @@ export function PreviewView() {
     const scheduler = schedulerRef.current;
     if (scheduler === null) return;
     const bytes = audioBytes;
-    const extension = audioExtension ?? 'ogg';
     let cancelled = false;
     void (async () => {
       try {
         // decodeAudioData detaches its input, so hand it a copy and keep the
         // source bytes the writer bundles.
         const decoded = await scheduler.decode(bytes.slice().buffer);
-        if (!cancelled) setAudio({ buffer: decoded, bytes, extension, paddingMs: audioPaddingMs });
+        if (!cancelled) setAudio({ buffer: decoded, bytes, paddingMs: audioPaddingMs });
       } catch {
         if (!cancelled) setAudioError('Could not decode the audio bundled in this .sng.');
       }
@@ -162,7 +155,7 @@ export function PreviewView() {
     return () => {
       cancelled = true;
     };
-  }, [audioBytes, audioBuffer, audioExtension, audioPaddingMs, setAudio]);
+  }, [audioBytes, audioBuffer, audioPaddingMs, setAudio]);
 
   const displayed = useMemo(
     () => (chart === null ? [] : displayedNotes(chart.notes, overrides, deletions)),
@@ -412,7 +405,7 @@ export function PreviewView() {
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf.slice(0)); // keep source bytes; decode detaches buf
       const decoded = await scheduler.decode(buf);
-      setAudio({ buffer: decoded, bytes, extension: extensionOf(file.name), paddingMs: 0 });
+      setAudio({ buffer: decoded, bytes, paddingMs: 0 });
     } catch {
       setAudioError('Could not decode that audio file. Pick a different file.');
     } finally {

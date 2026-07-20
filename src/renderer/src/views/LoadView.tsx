@@ -49,7 +49,7 @@ export function LoadView() {
     try {
       const picked = await window.gp2sng.loadSngFile();
       if (picked === null) return; // user cancelled the dialog — silent
-      const { blob, audioBytes, audioExtension } = readSngSession(picked.bytes);
+      const { blob, audioBytes } = readSngSession(picked.bytes);
       // Parsed here rather than in shared/sng for the same reason a fresh GP file is
       // parsed in the renderer: parse errors belong in the runtime that shows them.
       const parsed = parseGp(blob.gpBytes);
@@ -59,7 +59,6 @@ export function LoadView() {
         score: parsed,
         blob,
         audioBytes,
-        audioExtension,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That .sng could not be opened.');

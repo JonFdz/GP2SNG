@@ -115,7 +115,6 @@ const AUDIO_FILE = /^song\.[^.]+$/;
 export interface RestoredSession {
   blob: SessionBlob;
   audioBytes: Uint8Array;
-  audioExtension: string;
 }
 
 // Everything a reopened .sng yields, short of parsing its GP bytes — that happens
@@ -145,9 +144,5 @@ export function readSngSession(sngBytes: Uint8Array): RestoredSession {
     );
   }
 
-  return {
-    blob,
-    audioBytes: files[audioName],
-    audioExtension: audioName.slice('song.'.length),
-  };
+  return { blob, audioBytes: files[audioName] };
 }

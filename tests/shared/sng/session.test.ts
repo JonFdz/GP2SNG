@@ -146,7 +146,6 @@ describe('readSngSession', () => {
   it('extracts the session blob and the bundled audio', () => {
     const restored = readSngSession(writeSng(chart, metadata, audio, -120, sampleBlob()));
     expect(restored.blob).toEqual(sampleBlob());
-    expect(restored.audioExtension).toBe('ogg');
     expect(Array.from(restored.audioBytes)).toEqual([1, 2, 3, 4]);
   });
 
@@ -180,7 +179,6 @@ describe('readSngSession', () => {
   it('reopens a .sng whose bundled audio extension is outside the original four', () => {
     const flac = { bytes: new Uint8Array([9, 8, 7, 6]), extension: 'flac' };
     const restored = readSngSession(writeSng(chart, metadata, flac, -120, sampleBlob()));
-    expect(restored.audioExtension).toBe('flac');
     expect(Array.from(restored.audioBytes)).toEqual([9, 8, 7, 6]);
   });
 

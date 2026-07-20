@@ -74,7 +74,6 @@ function restore(): void {
     score: score([track(3, true, 40)]),
     blob: blob(),
     audioBytes: new Uint8Array([9, 9, 9]),
-    audioExtension: 'ogg',
   });
 }
 
@@ -358,7 +357,6 @@ describe('wizardStore preview state', () => {
     useWizardStore.getState().setAudio({
       buffer: {} as AudioBuffer,
       bytes: new Uint8Array([1]),
-      extension: 'ogg',
       paddingMs: 500,
     });
     expect(useWizardStore.getState().audioPaddingMs).toBe(500);
@@ -604,7 +602,6 @@ describe('restoreSession', () => {
     expect(s.metadata).toEqual(blob().metadata);
     expect(s.audioOffsetMs).toBe(-120);
     expect(s.audioPaddingMs).toBe(250);
-    expect(s.audioExtension).toBe('ogg');
     expect(Array.from(s.audioBytes ?? [])).toEqual([9, 9, 9]);
   });
 

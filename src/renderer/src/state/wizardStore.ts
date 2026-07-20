@@ -129,7 +129,6 @@ export interface WizardState {
   metadata: SongMetadata | null; // editable form values, seeded from the score
   audioBuffer: AudioBuffer | null; // decoded for playback
   audioBytes: Uint8Array | null; // original source bytes, bundled by the writer
-  audioExtension: string | null; // e.g. "ogg" for the song.<ext> slot
   audioOffsetMs: number; // the SNG `delay` value
   audioPaddingMs: number; // silence already prepended to audioBytes
   viewTime: number; // seconds from chart start currently at the hit line
@@ -158,7 +157,6 @@ export interface WizardState {
     score: ParsedGpScore;
     blob: SessionBlob;
     audioBytes: Uint8Array;
-    audioExtension: string;
   }) => void;
   selectTrack: (trackId: number) => void;
   // Initialize the session map from the global map on entering Mapping. A no-op
@@ -169,12 +167,7 @@ export interface WizardState {
   setSessionSettings: (next: ConversionSettings) => void;
   setConversion: (chart: YargChart, warnings: ConversionWarning[]) => void;
   setMetadata: (patch: Partial<SongMetadata>) => void;
-  setAudio: (audio: {
-    buffer: AudioBuffer;
-    bytes: Uint8Array;
-    extension: string;
-    paddingMs: number;
-  }) => void;
+  setAudio: (audio: { buffer: AudioBuffer; bytes: Uint8Array; paddingMs: number }) => void;
   clearAudio: () => void;
   setAudioOffsetMs: (ms: number) => void;
   setViewTime: (t: number) => void;
@@ -217,7 +210,6 @@ const INITIAL = {
   metadata: null,
   audioBuffer: null,
   audioBytes: null,
-  audioExtension: null,
   audioOffsetMs: 0,
   audioPaddingMs: 0,
   viewTime: 0,
@@ -262,7 +254,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       score,
       selectedTrackId: detectDrumTrack(score.tracks),
     }),
-  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes, audioExtension }) =>
+  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes }) =>
     set({
       ...INITIAL,
       step: 'preview',
@@ -282,7 +274,6 @@ export const useWizardStore = create<WizardState>((set) => ({
       // The AudioContext lives on the Preview step, so the buffer is decoded there
       // from these bytes rather than here.
       audioBytes,
-      audioExtension,
       audioOffsetMs: blob.audioOffsetMs,
       audioPaddingMs: blob.audioPaddingMs,
       overrides: blob.overrides,
@@ -347,15 +338,9 @@ export const useWizardStore = create<WizardState>((set) => ({
   setConversion: (chart, warnings) => set({ chart, warnings }),
   setMetadata: (patch) =>
     set((s) => ({ metadata: { ...(s.metadata ?? BLANK_METADATA), ...patch } })),
-  setAudio: ({ buffer, bytes, extension, paddingMs }) =>
-    set({
-      audioBuffer: buffer,
-      audioBytes: bytes,
-      audioExtension: extension,
-      audioPaddingMs: paddingMs,
-    }),
-  clearAudio: () =>
-    set({ audioBuffer: null, audioBytes: null, audioExtension: null, audioPaddingMs: 0 }),
+  setAudio: ({ buffer, bytes, paddingMs }) =>
+    set({ audioBuffer: buffer, audioBytes: bytes, audioPaddingMs: paddingMs }),
+  clearAudio: () => set({ audioBuffer: null, audioBytes: null, audioPaddingMs: 0 }),
   setAudioOffsetMs: (ms) => set({ audioOffsetMs: ms }),
   setViewTime: (t) => set({ viewTime: t }),
   setPixelsPerSecond: (pps) => set({ pixelsPerSecond: pps }),
