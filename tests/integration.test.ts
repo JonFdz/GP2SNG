@@ -12,8 +12,14 @@ import { describe, expect, it } from 'vitest';
 import { convertToYargChart, tickToSeconds } from '../src/shared/convert/index';
 import { parseGp } from '../src/shared/gp/index';
 import { applyRemap } from '../src/shared/midi/index';
-import { readMidi, readSng, sngDelayMs, writeSng } from '../src/shared/sng/index';
-import { DEFAULT_MIDI_MAP, type SongMetadata } from '../src/shared/types/index';
+import { readMidi, readSng, readSngSession, sngDelayMs, writeSng } from '../src/shared/sng/index';
+import {
+  DEFAULT_CONVERSION_SETTINGS,
+  DEFAULT_MIDI_MAP,
+  SESSION_BLOB_VERSION,
+  type SessionBlob,
+  type SongMetadata,
+} from '../src/shared/types/index';
 
 const exampleBytes = new Uint8Array(
   readFileSync(fileURLToPath(new URL('./fixtures/example.gp', import.meta.url))),
@@ -36,7 +42,29 @@ const audio = { bytes: Uint8Array.from([0xff, 0x00, 0x13, 0x37]), extension: 'OG
 // parse → map → convert → write → read back.
 const score = parseGp(exampleBytes);
 const { chart, warnings } = convertToYargChart(score, score.tracks[0].id, DEFAULT_MIDI_MAP);
-const sng = readSng(writeSng(chart, metadata, audio, -120));
+
+// The blob is opaque to most of these tests — they assert container and MIDI
+// structure — but writeSng requires one, so this is the minimum well-formed value.
+// gpBytes is the real fixture so the round-trip test below means something.
+function session(): SessionBlob {
+  return {
+    version: SESSION_BLOB_VERSION,
+    gpFilePath: 'C:/songs/song.gp',
+    gpBytes: exampleBytes,
+    selectedTrackId: 0,
+    sessionMap: DEFAULT_MIDI_MAP,
+    sessionSettings: DEFAULT_CONVERSION_SETTINGS,
+    chart,
+    warnings: [],
+    overrides: [],
+    deletions: [],
+    previewRemaps: [],
+    metadata,
+    audioOffsetMs: 0,
+  };
+}
+
+const sng = readSng(writeSng(chart, metadata, audio, -120, session()));
 const midi = readMidi(sng.files['notes.mid']);
 const drums = midi.tracks.find((t) => t.name === 'PART DRUMS');
 const events = midi.tracks.find((t) => t.name === 'EVENTS');
@@ -128,8 +156,18 @@ describe('GP → SNG pipeline (integration)', () => {
     // Remapping 42 to yellow tom must surface that marker in the final .sng.
     const remapped = applyRemap(DEFAULT_MIDI_MAP, 42, 'yellowTom');
     const res = convertToYargChart(score, score.tracks[0].id, remapped);
-    const rmidi = readMidi(readSng(writeSng(res.chart, metadata, undefined, 0)).files['notes.mid']);
+    const rmidi = readMidi(
+      readSng(writeSng(res.chart, metadata, undefined, 0, session())).files['notes.mid'],
+    );
     const rdrums = rmidi.tracks.find((t) => t.name === 'PART DRUMS');
     expect(rdrums?.notes.some((n) => n.note === 110)).toBe(true);
+  });
+});
+
+describe('session blob round trip', () => {
+  it('carries the GP file through a .sng and re-parses to an identical score', () => {
+    const restored = readSngSession(writeSng(chart, metadata, audio, -120, session()));
+    expect(Array.from(restored.blob.gpBytes)).toEqual(Array.from(exampleBytes));
+    expect(parseGp(restored.blob.gpBytes)).toEqual(score);
   });
 });

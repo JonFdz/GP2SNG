@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { decodeSessionBlob, encodeSessionBlob } from '../../../src/shared/sng/index';
+import {
+  buildMidi,
+  buildSngContainer,
+  decodeSessionBlob,
+  encodeSessionBlob,
+  readMidi,
+  readSng,
+  readSngSession,
+  writeSng,
+} from '../../../src/shared/sng/index';
 import {
   DEFAULT_CONVERSION_SETTINGS,
   DEFAULT_MIDI_MAP,
@@ -72,5 +81,51 @@ describe('session blob codec', () => {
     delete parsed.chart;
     const bytes = new TextEncoder().encode(JSON.stringify(parsed));
     expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
+  });
+
+  it('refuses a blob whose gpFileBase64 is not valid base64', () => {
+    const parsed = JSON.parse(new TextDecoder().decode(encodeSessionBlob(sampleBlob())));
+    parsed.gpFileBase64 = 'not-valid-base64!!!';
+    const bytes = new TextEncoder().encode(JSON.stringify(parsed));
+    expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
+  });
+});
+
+describe('readSngSession', () => {
+  const audio = { bytes: new Uint8Array([1, 2, 3, 4]), extension: 'ogg' };
+
+  it('extracts the session blob and the bundled audio', () => {
+    const restored = readSngSession(writeSng(chart, metadata, audio, -120, sampleBlob()));
+    expect(restored.blob).toEqual(sampleBlob());
+    expect(restored.audioExtension).toBe('ogg');
+    expect(Array.from(restored.audioBytes)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('leaves notes.mid and the audio file untouched', () => {
+    const sng = readSng(writeSng(chart, metadata, audio, 0, sampleBlob()));
+    const drums = readMidi(sng.files['notes.mid']).tracks.find((t) => t.name === 'PART DRUMS');
+    expect(drums?.notes).toHaveLength(1);
+    expect(Array.from(sng.files['song.ogg'])).toEqual([1, 2, 3, 4]);
+  });
+
+  it('refuses a .sng that carries no session blob', () => {
+    const foreign = buildSngContainer(
+      [
+        { name: 'notes.mid', bytes: buildMidi(chart) },
+        { name: 'song.ogg', bytes: audio.bytes },
+      ],
+      [['name', 'Song']],
+      new Uint8Array(16),
+    );
+    expect(() => readSngSession(foreign)).toThrow(SessionRestoreError);
+  });
+
+  it('refuses a .sng with no bundled audio', () => {
+    const noAudio = writeSng(chart, metadata, undefined, 0, sampleBlob());
+    expect(() => readSngSession(noAudio)).toThrow(SessionRestoreError);
+  });
+
+  it('refuses bytes that are not a .sng at all', () => {
+    expect(() => readSngSession(new Uint8Array([0, 1, 2, 3]))).toThrow(SessionRestoreError);
   });
 });

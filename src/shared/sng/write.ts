@@ -1,7 +1,14 @@
 import { tickToSeconds } from '../convert/index';
-import { SngWriteError, type SongMetadata, type YargChart } from '../types/index';
+import {
+  SESSION_BLOB_FILENAME,
+  type SessionBlob,
+  SngWriteError,
+  type SongMetadata,
+  type YargChart,
+} from '../types/index';
 import { buildSngContainer } from './container';
 import { buildMidi } from './midi-write';
+import { encodeSessionBlob } from './session';
 
 function randomMask(): Uint8Array {
   const m = new Uint8Array(16);
@@ -26,6 +33,7 @@ export function writeSng(
   metadata: SongMetadata,
   audio: { bytes: Uint8Array; extension: string } | undefined,
   offsetMs: number,
+  session: SessionBlob,
 ): Uint8Array {
   if (metadata.name === '' || metadata.artist === '') {
     throw new SngWriteError('Song name and artist are required', {
@@ -38,6 +46,9 @@ export function writeSng(
     { name: 'notes.mid', bytes: buildMidi(chart) },
   ];
   if (audio) files.push({ name: `song.${audio.extension.toLowerCase()}`, bytes: audio.bytes });
+  // The editing session, so this .sng can be reopened and edited later. YARG looks
+  // files up by known name and never enumerates, so an unknown member is inert.
+  files.push({ name: SESSION_BLOB_FILENAME, bytes: encodeSessionBlob(session) });
 
   const songLengthMs = Math.round(
     tickToSeconds(chart.endTick, chart.tempoMap, chart.resolution) * 1000,

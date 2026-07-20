@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { readMidi, readSng, sngDelayMs, writeSng } from '../../../src/shared/sng/index';
-import type { SongMetadata, YargChart } from '../../../src/shared/types/index';
+import {
+  DEFAULT_CONVERSION_SETTINGS,
+  DEFAULT_MIDI_MAP,
+  SESSION_BLOB_VERSION,
+  type SessionBlob,
+  type SongMetadata,
+  type YargChart,
+} from '../../../src/shared/types/index';
 
 const chart: YargChart = {
   resolution: 480,
@@ -21,9 +28,29 @@ const meta: SongMetadata = {
   drumsDifficulty: 4,
 };
 
+// The blob is opaque to these tests — they assert container and MIDI structure —
+// but writeSng requires one, so this is the minimum well-formed value.
+function session(): SessionBlob {
+  return {
+    version: SESSION_BLOB_VERSION,
+    gpFilePath: 'C:/songs/song.gp',
+    gpBytes: new Uint8Array([1, 2, 3]),
+    selectedTrackId: 0,
+    sessionMap: DEFAULT_MIDI_MAP,
+    sessionSettings: DEFAULT_CONVERSION_SETTINGS,
+    chart,
+    warnings: [],
+    overrides: [],
+    deletions: [],
+    previewRemaps: [],
+    metadata: meta,
+    audioOffsetMs: 0,
+  };
+}
+
 describe('writeSng', () => {
   it('bundles notes.mid, writes required metadata, and computes song_length', () => {
-    const sng = readSng(writeSng(chart, meta, undefined, 0));
+    const sng = readSng(writeSng(chart, meta, undefined, 0, session()));
     expect('notes.mid' in sng.files).toBe(true);
     expect(sng.metadata).toMatchObject({
       name: 'Song',
@@ -42,13 +69,15 @@ describe('writeSng', () => {
 
   it('bundles audio at the song.<ext> slot with the delay offset', () => {
     const audio = { bytes: Uint8Array.from([9, 8, 7]), extension: 'OGG' };
-    const sng = readSng(writeSng(chart, meta, audio, -250));
+    const sng = readSng(writeSng(chart, meta, audio, -250, session()));
     expect([...sng.files['song.ogg']]).toEqual([9, 8, 7]); // filename lowercased
     expect(sng.metadata.delay).toBe('-250');
   });
 
   it('throws when name or artist is missing', () => {
-    expect(() => writeSng(chart, { ...meta, name: '' }, undefined, 0)).toThrow(/required/);
+    expect(() => writeSng(chart, { ...meta, name: '' }, undefined, 0, session())).toThrow(
+      /required/,
+    );
   });
 });
 
@@ -70,7 +99,7 @@ describe('sngDelayMs', () => {
   });
 
   it('writes that value as delay, with a song_length covering the lead-in', () => {
-    const sng = readSng(writeSng(leadIn, meta, undefined, 0));
+    const sng = readSng(writeSng(leadIn, meta, undefined, 0, session()));
     expect(sng.metadata.delay).toBe('-2000');
     expect(sng.metadata.song_length).toBe('4000');
   });

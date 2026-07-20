@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { writeSng } from '../../../shared/sng/index';
-import type { YargChart } from '../../../shared/types/index';
+import {
+  SESSION_BLOB_VERSION,
+  type SessionBlob,
+  type YargChart,
+} from '../../../shared/types/index';
 import { MetadataForm } from '../components/MetadataForm';
 import { displayedNotes } from '../playback/overrides';
 import { defaultMetadata, isMetadataValid, metadataErrors } from '../state/metadata';
@@ -31,6 +35,13 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
   const setMetadata = useWizardStore((s) => s.setMetadata);
   const reset = useWizardStore((s) => s.reset);
+  const gpFilePath = useWizardStore((s) => s.gpFilePath);
+  const gpFileBytes = useWizardStore((s) => s.gpFileBytes);
+  const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
+  const sessionMap = useWizardStore((s) => s.sessionMap);
+  const sessionSettings = useWizardStore((s) => s.sessionSettings);
+  const warnings = useWizardStore((s) => s.warnings);
+  const previewRemaps = useWizardStore((s) => s.previewRemaps);
 
   const outputDir = useSettingsStore((s) => s.outputDir);
   const setOutputDir = useSettingsStore((s) => s.setOutputDir);
@@ -54,9 +65,20 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   );
 
   // Metadata seeds via the effect above, so it is briefly null on first render.
-  if (chart === null || metadata === null) return null;
+  if (
+    chart === null ||
+    metadata === null ||
+    gpFileBytes === null ||
+    sessionMap === null ||
+    selectedTrackId === null
+  ) {
+    return null;
+  }
   const gpChart = chart;
   const gpMetadata = metadata;
+  const gpBytes = gpFileBytes;
+  const map = sessionMap;
+  const trackId = selectedTrackId;
   const errors = metadataErrors(gpMetadata);
 
   async function doWrite(dir: string, filename: string) {
@@ -67,7 +89,22 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
         audioBytes !== null && audioExtension !== null
           ? { bytes: audioBytes, extension: audioExtension }
           : undefined;
-      const bytes = writeSng(displayedChart, gpMetadata, audio, audioOffsetMs);
+      const session: SessionBlob = {
+        version: SESSION_BLOB_VERSION,
+        gpFilePath: gpFilePath ?? '',
+        gpBytes,
+        selectedTrackId: trackId,
+        sessionMap: map,
+        sessionSettings,
+        chart: gpChart,
+        warnings,
+        overrides,
+        deletions,
+        previewRemaps,
+        metadata: gpMetadata,
+        audioOffsetMs,
+      };
+      const bytes = writeSng(displayedChart, gpMetadata, audio, audioOffsetMs, session);
       await window.gp2sng.writeSng(dir, filename, bytes);
       setSaved(true);
       setSaveError(null);
