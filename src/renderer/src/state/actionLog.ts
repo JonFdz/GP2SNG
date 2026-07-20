@@ -1,6 +1,10 @@
 import { splitYargNoteId } from '../../../shared/midi/index';
-import type { BaseYargNote } from '../../../shared/types/index';
-import type { PreviewRemap, SeqDeletion, SeqOverride } from './wizardStore';
+import type {
+  BaseYargNote,
+  PreviewRemap,
+  SeqDeletion,
+  SeqOverride,
+} from '../../../shared/types/index';
 
 // One row of the Preview Action Log (docs/DESIGN.md → Chart preview → Action Log).
 // A live view of an active edit, not a historical event: reassign/delete rows are

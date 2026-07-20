@@ -3,10 +3,9 @@ import {
   applyDeletions,
   applyOverrides,
   displayedNotes,
-  type NoteOverride,
 } from '../../../src/renderer/src/playback/overrides';
 import { detectChartErrors } from '../../../src/shared/convert/index';
-import type { YargNote } from '../../../src/shared/types/index';
+import type { NoteOverride, YargNote } from '../../../src/shared/types/index';
 
 const base: YargNote[] = [
   { tick: 0, note: 'red', dynamic: 'neutral', midi: 38 },

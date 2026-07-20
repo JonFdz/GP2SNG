@@ -4,34 +4,18 @@ import type {
   ConversionWarning,
   CymbalPriorities,
   MidiMap,
+  NoteOverride,
+  NoteRef,
   ParsedGpScore,
+  PreviewRemap,
+  SeqDeletion,
+  SeqOverride,
   SongMetadata,
   YargChart,
   YargNoteId,
 } from '../../../shared/types/index';
 import { DEFAULT_CONVERSION_SETTINGS, YARG_NOTE_IDS } from '../../../shared/types/index';
-import type { NoteOverride } from '../playback/overrides';
 import { detectDrumTrack } from './detectDrumTrack';
-
-// A selected chart note, identified the same way overrides are (docs/DESIGN.md →
-// Chart preview → Override layer): (tick, midi) survives re-conversion.
-export type NoteRef = { tick: number; midi: number };
-
-// Recency-stamped variants of the edit-layer entries. The stamp orders the Action
-// Log newest-first (docs/DESIGN.md → Chart preview → Action Log); it lives only on
-// the store's arrays, never in the pure override/deletion layer.
-export type SeqOverride = NoteOverride & { seq: number };
-export type SeqDeletion = NoteRef & { seq: number };
-
-// A Preview-scoped "all notes on MIDI n" reassign. `from` is the row the MIDI held
-// before its FIRST Preview remap (so undo can restore it and re-convert); `to` is
-// the current target (null = unassigned).
-export type PreviewRemap = {
-  midi: number;
-  from: YargNoteId | null;
-  to: YargNoteId | null;
-  seq: number;
-};
 
 // Default highway scroll speed in px/s (docs/DESIGN.md → Highway scroll speed):
 // a view-only preference, not persisted.

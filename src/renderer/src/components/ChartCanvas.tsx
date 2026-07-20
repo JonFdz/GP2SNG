@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { DrumDynamic, YargNote } from '../../../shared/types/index';
+import type { DrumDynamic, NoteRef, YargNote } from '../../../shared/types/index';
 import {
   type ChartLayout,
   currentBarIndex,
@@ -16,7 +16,6 @@ import {
   noteToY,
   type PlacedNote,
 } from '../playback/geometry';
-import type { NoteRef } from '../state/wizardStore';
 import {
   CONE_DARKEN,
   CONE_STOPS,

@@ -1,17 +1,4 @@
-import type { BaseYargNote, YargNote } from '../../../shared/types/index';
-
-// The one-off override layer (docs/DESIGN.md → Chart preview → Override layer).
-// One-off reassigns ("This note only") and the §11 collision override are modeled
-// as a post-conversion layer, not mutations of the converted chart: the displayed
-// chart = convert(track, sessionMap) with these overrides applied on top. A note
-// is identified by (tick, midi) so an override survives re-conversion after an
-// "all notes" remap.
-export interface NoteOverride {
-  tick: number;
-  midi: number;
-  note: BaseYargNote; // the reassigned YARG note (lane + tom/cymbal)
-  accented: boolean; // accented-variant target chosen -> force accent
-}
+import type { NoteOverride, YargNote } from '../../../shared/types/index';
 
 function key(tick: number, midi: number): string {
   return `${tick}:${midi}`;
