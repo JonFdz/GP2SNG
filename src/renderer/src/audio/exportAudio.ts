@@ -49,6 +49,47 @@ export async function resolveExportAudio(input: ResolveExportAudioInput): Promis
   };
 }
 
+export interface ResolveFinalizeAudioInput {
+  audioBytes: Uint8Array | null;
+  audioBuffer: AudioBuffer | null;
+  audioPaddingMs: number;
+  leadInMs: number;
+}
+
+export interface ResolvedFinalizeAudio {
+  audio: { bytes: Uint8Array; extension: string } | undefined;
+  paddingMs: number;
+}
+
+// The audio to bundle into an exported .sng, gating the one way this can silently
+// lose data: `audioBytes` alone does not mean playback is ready — Preview decodes
+// it asynchronously (100-400 ms for a multi-MB file), and a restored session can
+// land on Preview with that decode still in flight. Exporting during that window
+// must fail loudly rather than write a `.sng` with no audio member at all, which
+// `readSngSession` then refuses to ever reopen.
+export async function resolveFinalizeAudio(
+  input: ResolveFinalizeAudioInput,
+): Promise<ResolvedFinalizeAudio> {
+  const { audioBytes, audioBuffer, audioPaddingMs, leadInMs } = input;
+  if (audioBytes === null) return { audio: undefined, paddingMs: 0 };
+  if (audioBuffer === null) {
+    throw new Error('The audio is still decoding — return to Preview and try again.');
+  }
+  const resolved = await resolveExportAudio({
+    bytes: audioBytes,
+    channels: Array.from({ length: audioBuffer.numberOfChannels }, (_, i) =>
+      audioBuffer.getChannelData(i),
+    ),
+    sampleRate: audioBuffer.sampleRate,
+    currentPaddingMs: audioPaddingMs,
+    targetPaddingMs: leadInMs,
+  });
+  return {
+    audio: { bytes: resolved.bytes, extension: resolved.extension },
+    paddingMs: resolved.paddingMs,
+  };
+}
+
 // Where the bundled audio's first sample sits on the preview's chart clock. Mirrors
 // what YARG will do with the exported file: the writer's `delay` is the user's
 // offset alone, and the lead-in comes from silence in the audio — which the preview

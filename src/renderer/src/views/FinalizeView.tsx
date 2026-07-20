@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { tickToSeconds } from '../../../shared/convert/index';
 import { writeSng } from '../../../shared/sng/index';
 import type { YargChart } from '../../../shared/types/index';
-import { resolveExportAudio } from '../audio/index';
+import { resolveFinalizeAudio } from '../audio/index';
 import { MetadataForm } from '../components/MetadataForm';
 import { displayedNotes } from '../playback/overrides';
 import { defaultMetadata, isMetadataValid, metadataErrors } from '../state/metadata';
@@ -92,21 +92,12 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       const leadInMs = Math.round(
         tickToSeconds(gpChart.leadInTicks, gpChart.tempoMap, gpChart.resolution) * 1000,
       );
-      let audio: { bytes: Uint8Array; extension: string } | undefined;
-      let paddingMs = 0;
-      if (audioBytes !== null && audioBuffer !== null) {
-        const resolved = await resolveExportAudio({
-          bytes: audioBytes,
-          channels: Array.from({ length: audioBuffer.numberOfChannels }, (_, i) =>
-            audioBuffer.getChannelData(i),
-          ),
-          sampleRate: audioBuffer.sampleRate,
-          currentPaddingMs: audioPaddingMs,
-          targetPaddingMs: leadInMs,
-        });
-        audio = { bytes: resolved.bytes, extension: resolved.extension };
-        paddingMs = resolved.paddingMs;
-      }
+      const { audio, paddingMs } = await resolveFinalizeAudio({
+        audioBytes,
+        audioBuffer,
+        audioPaddingMs,
+        leadInMs,
+      });
       const session = buildSessionBlob({
         gpFilePath: filePath,
         gpBytes,

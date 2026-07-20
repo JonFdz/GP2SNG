@@ -3,6 +3,7 @@ import {
   previewAudioOffsetSeconds,
   repadPcm,
   resolveExportAudio,
+  resolveFinalizeAudio,
 } from '../../../src/renderer/src/audio/index';
 
 const SAMPLE_RATE = 48000;
@@ -47,6 +48,52 @@ describe('resolveExportAudio', () => {
     });
 
     expect(result.paddingMs).toBe(1500);
+  }, 30000);
+});
+
+describe('resolveFinalizeAudio', () => {
+  it('resolves no audio when the session has none at all', async () => {
+    const result = await resolveFinalizeAudio({
+      audioBytes: null,
+      audioBuffer: null,
+      audioPaddingMs: 0,
+      leadInMs: 4000,
+    });
+
+    expect(result).toEqual({ audio: undefined, paddingMs: 0 });
+  });
+
+  // Regression: a restored session can land on Preview with source bytes set but
+  // its buffer still decoding (100-400 ms for a multi-MB file). Exporting during
+  // that window must fail loudly, not silently write a .sng with no audio member
+  // at all — readSngSession refuses to ever reopen one of those.
+  it('throws instead of silently dropping the audio when the buffer has not decoded yet', async () => {
+    await expect(
+      resolveFinalizeAudio({
+        audioBytes: Uint8Array.from([1, 2, 3, 4]),
+        audioBuffer: null,
+        audioPaddingMs: 0,
+        leadInMs: 4000,
+      }),
+    ).rejects.toThrow(/still decoding/);
+  });
+
+  it('resolves the padded audio once the buffer has decoded', async () => {
+    const buffer = {
+      numberOfChannels: 1,
+      sampleRate: SAMPLE_RATE,
+      getChannelData: () => channels()[0],
+    } as unknown as AudioBuffer;
+
+    const result = await resolveFinalizeAudio({
+      audioBytes: Uint8Array.from([1, 2, 3, 4]),
+      audioBuffer: buffer,
+      audioPaddingMs: 0,
+      leadInMs: 1000,
+    });
+
+    expect(result.paddingMs).toBe(1000);
+    expect(result.audio?.extension).toBe('ogg');
   }, 30000);
 });
 
