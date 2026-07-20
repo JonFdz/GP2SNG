@@ -38,8 +38,6 @@ import {
   type CymbalPriority,
   GRACE_NOTE_SPACINGS,
   type GraceNoteSpacing,
-  LEAD_IN_BARS,
-  type LeadInBars,
   type MidiMap,
   type YargNoteId,
 } from '../../../shared/types/index';
@@ -52,7 +50,6 @@ import { YargNoteSwatch, yargNoteLabel } from './YargNoteSwatch';
 const BUCKET_ID = '__bucket__';
 
 const GRACE_SPACING_LABEL: Record<GraceNoteSpacing, string> = { '32nd': '1/32', '64th': '1/64' };
-const LEAD_IN_LABEL: Record<LeadInBars, string> = { 1: '1 bar', 2: '2 bars', 4: '4 bars' };
 
 export type MidiMapViewProps = {
   map: MidiMap; // the global map or the session map
@@ -135,14 +132,6 @@ export function MidiMapView({
   return (
     <div className="midi-map">
       <div className="midi-map__toolbar">
-        <SegmentedSetting
-          label="Song lead-in"
-          help="Empty bars added before the song starts, so notes don't arrive the moment you press play. The audio is held back to match, so the chart stays in sync."
-          options={LEAD_IN_BARS}
-          labelFor={(bars) => LEAD_IN_LABEL[bars]}
-          value={settings.leadInBars}
-          onChange={(leadInBars) => onSettingsChange({ ...settings, leadInBars })}
-        />
         <SegmentedSetting
           label="Grace note spacing"
           help="How far before the beat grace notes land, as a flam. Tighter (1/64) is more realistic; wider (1/32) is easier to read at fast tempos."
@@ -352,8 +341,7 @@ function CardFace({ midi, overlay }: { midi: number; overlay?: boolean }) {
 }
 
 // A labelled segmented picker for one ConversionSettings field (docs/DESIGN.md →
-// MIDI map component). Shared by the grace-spacing and lead-in rows, which differ
-// only in their label, help text, options and value.
+// MIDI map component), e.g. grace-note spacing.
 function SegmentedSetting<T extends string | number>({
   label,
   help,

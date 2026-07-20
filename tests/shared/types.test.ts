@@ -9,7 +9,6 @@ import {
   DEFAULT_SETTINGS,
   Gp2SngError,
   GpParseError,
-  LEAD_IN_BARS,
   PersistenceError,
   YARG_NOTE_IDS,
 } from '../../src/shared/types/index';
@@ -75,7 +74,6 @@ describe('constants', () => {
       cymbalAccentedNotes: false,
       dynamicCymbalSelection: true,
       cymbalPriorities: DEFAULT_CYMBAL_PRIORITIES,
-      leadInBars: 2,
     });
   });
 });
@@ -128,18 +126,10 @@ describe('DEFAULT_CONVERSION_SETTINGS', () => {
       cymbalAccentedNotes: false,
       dynamicCymbalSelection: true,
       cymbalPriorities: DEFAULT_CYMBAL_PRIORITIES,
-      leadInBars: 2,
     });
   });
 
   it('composes DEFAULT_SETTINGS with a null output directory', () => {
     expect(DEFAULT_SETTINGS).toEqual({ outputDir: null, ...DEFAULT_CONVERSION_SETTINGS });
-  });
-});
-
-describe('LEAD_IN_BARS', () => {
-  it('offers 1, 2 and 4 bars, defaulting to 2 — there is deliberately no zero option', () => {
-    expect(LEAD_IN_BARS).toEqual([1, 2, 4]);
-    expect(DEFAULT_CONVERSION_SETTINGS.leadInBars).toBe(2);
   });
 });

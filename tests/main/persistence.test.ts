@@ -172,23 +172,6 @@ describe('write — round-trip', () => {
     expect(await readSettings(dir)).toEqual({ value: DEFAULT_SETTINGS, failedToLoad: true });
   });
 
-  it('rejects an unknown lead-in bar count, falling back to defaults with a recorded failure', async () => {
-    const dir = await tempDir();
-    const raw = JSON.stringify({ outputDir: 'C:\\x', leadInBars: 3 });
-    await writeFile(join(dir, 'settings.json'), raw, 'utf8');
-    expect(await readSettings(dir)).toEqual({ value: DEFAULT_SETTINGS, failedToLoad: true });
-  });
-
-  it('accepts a valid lead-in bar count', async () => {
-    const dir = await tempDir();
-    const raw = JSON.stringify({ outputDir: 'C:\\x', leadInBars: 4 });
-    await writeFile(join(dir, 'settings.json'), raw, 'utf8');
-    expect(await readSettings(dir)).toEqual({
-      value: { ...DEFAULT_SETTINGS, outputDir: 'C:\\x', leadInBars: 4 },
-      failedToLoad: false,
-    });
-  });
-
   it('round-trips a modified map through write then read', async () => {
     const dir = await tempDir();
     const map: MidiMap = { ...DEFAULT_MIDI_MAP, greenTom: [41, 43, 45, 58] };

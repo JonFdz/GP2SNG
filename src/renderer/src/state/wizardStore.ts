@@ -76,7 +76,6 @@ function conversionSettingsEqual(a: ConversionSettings, b: ConversionSettings): 
     a.tomGhostNotes === b.tomGhostNotes &&
     a.cymbalGhostNotes === b.cymbalGhostNotes &&
     a.dynamicCymbalSelection === b.dynamicCymbalSelection &&
-    a.leadInBars === b.leadInBars &&
     a.snareAccentedNotes === b.snareAccentedNotes &&
     a.tomAccentedNotes === b.tomAccentedNotes &&
     a.cymbalAccentedNotes === b.cymbalAccentedNotes &&

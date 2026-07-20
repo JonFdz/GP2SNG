@@ -94,16 +94,12 @@ describe('convertToYargChart — lead-in', () => {
     expect(c.leadInTicks).toBe(2 * ((7 * 4 * 480) / 8)); // 2 bars of 7/8 = 2 * 1680 = 3360
   });
 
-  it('scales linearly with the setting', () => {
-    const s = oneBarScore([{ notes: [{ midi: 38 }] }]);
-    for (const bars of [1, 2, 4] as const) {
-      const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, {
-        ...DEFAULT_CONVERSION_SETTINGS,
-        leadInBars: bars,
-      });
-      expect(c.leadInTicks).toBe(bars * 1920);
-      expect(c.notes[0].tick).toBe(bars * 1920);
-    }
+  it('derives a 1-bar lead-in when the song opens below 120 BPM', () => {
+    const s = oneBarScore([{ notes: [{ midi: 38 }] }], {
+      tempoAutomations: [{ bar: 0, position: 0, bpm: 90, linear: false }],
+    });
+    const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    expect(c.leadInTicks).toBe(1920); // 1 bar of 4/4 — 90 BPM clears the 2 s floor already
   });
 
   it('governs the lead-in with the song opening tempo, not the 120 BPM fallback', () => {

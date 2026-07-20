@@ -45,7 +45,7 @@ function blob(): SessionBlob {
     gpBytes: GP_BYTES,
     selectedTrackId: 3,
     sessionMap: applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom'),
-    sessionSettings: { ...DEFAULT_CONVERSION_SETTINGS, leadInBars: 4 },
+    sessionSettings: { ...DEFAULT_CONVERSION_SETTINGS },
     chart: restoredChart,
     warnings: [],
     overrides: [{ tick: 480, midi: 47, note: 'greenTom', accented: false, seq: 1 }],

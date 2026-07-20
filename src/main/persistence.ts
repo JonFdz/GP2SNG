@@ -8,8 +8,6 @@ import {
   DEFAULT_SETTINGS,
   GRACE_NOTE_SPACINGS,
   type GraceNoteSpacing,
-  LEAD_IN_BARS,
-  type LeadInBars,
   type LoadResult,
   type MidiMap,
   type PersistedSettings,
@@ -82,11 +80,6 @@ function validateSettings(value: unknown): string | null {
   if ('cymbalPriorities' in s) {
     const reason = validateCymbalPriorities(s.cymbalPriorities);
     if (reason !== null) return reason;
-  }
-  // leadInBars is optional on read (files predating the field are filled with the
-  // default by readSettings); when present it must be a known value.
-  if ('leadInBars' in s && !LEAD_IN_BARS.includes(s.leadInBars as LeadInBars)) {
-    return '"leadInBars" is not a known value';
   }
   return null;
 }

@@ -18,6 +18,7 @@ import {
   type YargNote,
 } from '../types/index';
 import { resolveDynamicCymbalColors } from './dynamicCymbalColor';
+import { leadInBarsFor, openingBpm } from './leadIn';
 import { expandTimeline } from './timeline';
 import {
   addFrac,
@@ -116,7 +117,6 @@ export function convertToYargChart(
 ): { chart: YargChart; warnings: ConversionWarning[] } {
   const {
     graceNoteSpacing,
-    leadInBars,
     snareGhostNotes,
     tomGhostNotes,
     cymbalGhostNotes,
@@ -135,10 +135,15 @@ export function convertToYargChart(
   const warnings: ConversionWarning[] = [];
 
   // The lead-in bars inherit the song's opening time signature so the chart stays
-  // bar-aligned (docs/DESIGN.md → Timing model → Lead-in). A score with no played
+  // bar-aligned (docs/DESIGN.md → Timing model → Lead-in), and their count comes
+  // from the chart's own opening tempo and meter per YARN. A score with no played
   // bars gets none; that path throws for having no notes below anyway.
   const firstBar = played.length > 0 ? score.masterBars[played[0]] : null;
-  const leadInTicks = firstBar === null ? 0 : leadInBars * barTicks(firstBar.timeSignature, ppq);
+  const leadInTicks =
+    firstBar === null
+      ? 0
+      : leadInBarsFor(firstBar.timeSignature, openingBpm(score.tempoAutomations, played), ppq) *
+        barTicks(firstBar.timeSignature, ppq);
 
   // "Accent ride bell & open hi-hat" on ⇒ accented yellow/blue cymbals denote open
   // hi-hat / ride bell, so a GP accent must not promote other yellow/blue cymbal

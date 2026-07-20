@@ -36,15 +36,6 @@ export type GraceNoteSpacing = '32nd' | '64th';
 
 export const GRACE_NOTE_SPACINGS: readonly GraceNoteSpacing[] = ['32nd', '64th'];
 
-// Empty bars prepended to every chart so notes do not arrive the instant play begins
-// (docs/DESIGN.md → Timing model → Lead-in). Bars, never seconds: a lead-in that is
-// not bar-aligned would misalign every measure line in the chart. There is no zero
-// option — YARG's own 2s start delay is a countdown to song time zero, not to the
-// first note, so a chart whose first note sits at tick 0 has no runway at all.
-export type LeadInBars = 1 | 2 | 4;
-
-export const LEAD_IN_BARS: readonly LeadInBars[] = [1, 2, 4];
-
 // A YARG cymbal lane color. The cymbal-color controls (docs/DESIGN.md → MIDI map
 // component) place a physical cymbal on one of these three lanes.
 export type CymbalColor = 'yellow' | 'blue' | 'green';
@@ -91,7 +82,6 @@ export type ConversionSettings = {
   // the converter spreads overlapping cymbals across lanes by priority.
   dynamicCymbalSelection: boolean;
   cymbalPriorities: CymbalPriorities;
-  leadInBars: LeadInBars;
 };
 
 export type PersistedSettings = { outputDir: string | null } & ConversionSettings;
@@ -130,7 +120,6 @@ export const DEFAULT_CONVERSION_SETTINGS: ConversionSettings = {
   cymbalAccentedNotes: false,
   dynamicCymbalSelection: true,
   cymbalPriorities: DEFAULT_CYMBAL_PRIORITIES,
-  leadInBars: 2,
 };
 
 export const DEFAULT_SETTINGS: PersistedSettings = {
