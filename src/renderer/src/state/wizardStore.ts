@@ -10,6 +10,7 @@ import type {
   PreviewRemap,
   SeqDeletion,
   SeqOverride,
+  SessionBlob,
   SongMetadata,
   YargChart,
   YargNoteId,
@@ -99,6 +100,10 @@ function nextSeq(s: WizardState): number {
 export interface WizardState {
   step: WizardStep;
   gpFilePath: string | null;
+  // The source GP file's bytes, retained so the session blob written into every
+  // .sng can carry them (docs/DESIGN.md → Session blob). Reopening then never
+  // depends on the original file still being on disk.
+  gpFileBytes: Uint8Array | null;
   score: ParsedGpScore | null;
   selectedTrackId: number | null;
   // Session-local MIDI map for the Mapping step: a clone of the global map, edited
@@ -140,7 +145,21 @@ export interface WizardState {
   // Load a freshly parsed score. Auto-selects the drum track (FUNCTIONALITY step
   // 4) and returns to the Load step so any forward progress is discarded — the
   // "changing an upstream decision invalidates downstream state" rule.
-  loadScore: (path: string, score: ParsedGpScore) => void;
+  loadScore: (path: string, bytes: Uint8Array, score: ParsedGpScore) => void;
+  // Restore a session from a reopened .sng (docs/DESIGN.md → Session blob). Sets
+  // everything at once rather than replaying the wizard's transitions, and seeds
+  // the baselines from the RESTORED values so `mapDirty`/`settingsDirty` start
+  // false: the user has not edited anything yet this session, so the "Update
+  // global MIDI map?" prompt must not fire merely because the original session had
+  // diverged from the global map.
+  restoreSession: (args: {
+    gpFilePath: string;
+    gpFileBytes: Uint8Array;
+    score: ParsedGpScore;
+    blob: SessionBlob;
+    audioBytes: Uint8Array;
+    audioExtension: string;
+  }) => void;
   selectTrack: (trackId: number) => void;
   // Initialize the session map from the global map on entering Mapping. A no-op
   // once a session already exists, so re-entering the step preserves session edits
@@ -179,6 +198,7 @@ export interface WizardState {
 const INITIAL = {
   step: 'load' as WizardStep,
   gpFilePath: null,
+  gpFileBytes: null,
   score: null,
   selectedTrackId: null,
   sessionMap: null,
@@ -228,12 +248,39 @@ export function canAdvance(
 
 export const useWizardStore = create<WizardState>((set) => ({
   ...INITIAL,
-  loadScore: (path, score) =>
+  loadScore: (path, bytes, score) =>
     set({
       ...INITIAL,
       gpFilePath: path,
+      gpFileBytes: bytes,
       score,
       selectedTrackId: detectDrumTrack(score.tracks),
+    }),
+  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes, audioExtension }) =>
+    set({
+      ...INITIAL,
+      step: 'preview',
+      gpFilePath,
+      gpFileBytes,
+      score,
+      selectedTrackId: blob.selectedTrackId,
+      sessionMap: blob.sessionMap,
+      baselineMap: blob.sessionMap,
+      mapDirty: false,
+      sessionSettings: blob.sessionSettings,
+      baselineSettings: blob.sessionSettings,
+      settingsDirty: false,
+      chart: blob.chart,
+      warnings: blob.warnings,
+      metadata: blob.metadata,
+      // The AudioContext lives on the Preview step, so the buffer is decoded there
+      // from these bytes rather than here.
+      audioBytes,
+      audioExtension,
+      audioOffsetMs: blob.audioOffsetMs,
+      overrides: blob.overrides,
+      deletions: blob.deletions,
+      previewRemaps: blob.previewRemaps,
     }),
   selectTrack: (trackId) =>
     set((s) =>

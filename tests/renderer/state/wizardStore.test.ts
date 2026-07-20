@@ -8,6 +8,8 @@ import {
   DEFAULT_MIDI_MAP,
   type ParsedGpScore,
   type ParsedGpTrack,
+  SESSION_BLOB_VERSION,
+  type SessionBlob,
   type YargChart,
 } from '../../../src/shared/types/index';
 
@@ -24,6 +26,55 @@ function score(tracks: ParsedGpTrack[]): ParsedGpScore {
   };
 }
 
+const GP_BYTES = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+
+const restoredChart: YargChart = {
+  resolution: 480,
+  tempoMap: [{ tick: 0, usPerQuarter: 500000 }],
+  timeSignatures: [{ tick: 0, numerator: 4, denominator: 4 }],
+  notes: [{ tick: 0, note: 'red', dynamic: 'neutral', midi: 38 }],
+  sections: [],
+  endTick: 1920,
+  leadInTicks: 0,
+};
+
+function blob(): SessionBlob {
+  return {
+    version: SESSION_BLOB_VERSION,
+    gpFilePath: 'C:/songs/song.gp',
+    gpBytes: GP_BYTES,
+    selectedTrackId: 3,
+    sessionMap: applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom'),
+    sessionSettings: { ...DEFAULT_CONVERSION_SETTINGS, leadInBars: 4 },
+    chart: restoredChart,
+    warnings: [],
+    overrides: [{ tick: 480, midi: 47, note: 'greenTom', accented: false, seq: 1 }],
+    deletions: [{ tick: 960, midi: 42, seq: 2 }],
+    previewRemaps: [{ midi: 51, from: 'blueCymbal', to: 'greenCymbal', seq: 3 }],
+    metadata: {
+      name: 'Song',
+      artist: 'Artist',
+      album: '',
+      genre: '',
+      year: '',
+      charter: 'X via GP2SNG',
+      drumsDifficulty: 4,
+    },
+    audioOffsetMs: -120,
+  };
+}
+
+function restore(): void {
+  useWizardStore.getState().restoreSession({
+    gpFilePath: 'C:/songs/song.gp',
+    gpFileBytes: GP_BYTES,
+    score: score([track(3, true, 40)]),
+    blob: blob(),
+    audioBytes: new Uint8Array([9, 9, 9]),
+    audioExtension: 'ogg',
+  });
+}
+
 beforeEach(() => {
   useWizardStore.getState().reset();
 });
@@ -38,7 +89,7 @@ describe('wizardStore', () => {
 
   test('loadScore stores the file and auto-selects the drum track with the most notes', () => {
     const sc = score([track(0, false, 500), track(1, true, 10), track(2, true, 40)]);
-    useWizardStore.getState().loadScore('C:/song.gp', sc);
+    useWizardStore.getState().loadScore('C:/song.gp', GP_BYTES, sc);
     const s = useWizardStore.getState();
     expect(s.gpFilePath).toBe('C:/song.gp');
     expect(s.score).toBe(sc);
@@ -47,17 +98,17 @@ describe('wizardStore', () => {
 
   test('selectTrack overrides the auto-selected track', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
-    useWizardStore.getState().loadScore('C:/song.gp', sc);
+    useWizardStore.getState().loadScore('C:/song.gp', GP_BYTES, sc);
     useWizardStore.getState().selectTrack(1);
     expect(useWizardStore.getState().selectedTrackId).toBe(1);
   });
 
   test('loading a different file resets forward wizard state', () => {
-    useWizardStore.getState().loadScore('a.gp', score([track(0, true, 40)]));
+    useWizardStore.getState().loadScore('a.gp', GP_BYTES, score([track(0, true, 40)]));
     useWizardStore.getState().goNext(); // -> mapping
     expect(useWizardStore.getState().step).toBe('mapping');
 
-    useWizardStore.getState().loadScore('b.gp', score([track(5, true, 12)]));
+    useWizardStore.getState().loadScore('b.gp', GP_BYTES, score([track(5, true, 12)]));
     const s = useWizardStore.getState();
     expect(s.step).toBe('load');
     expect(s.selectedTrackId).toBe(5);
@@ -87,7 +138,7 @@ describe('wizardStore', () => {
   });
 
   test('reset returns the store to its initial state', () => {
-    useWizardStore.getState().loadScore('a.gp', score([track(0, true, 40)]));
+    useWizardStore.getState().loadScore('a.gp', GP_BYTES, score([track(0, true, 40)]));
     useWizardStore.getState().goNext();
     useWizardStore.getState().reset();
     const s = useWizardStore.getState();
@@ -166,7 +217,7 @@ describe('wizardStore session map + conversion', () => {
 
   test('reselecting a different track invalidates session map, dirtiness, and conversion', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
-    useWizardStore.getState().loadScore('a.gp', sc);
+    useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc);
     useWizardStore.getState().startSession(DEFAULT_MIDI_MAP, DEFAULT_CONVERSION_SETTINGS);
     useWizardStore.getState().setSessionMap(applyRemap(DEFAULT_MIDI_MAP, 51, 'yellowCymbal'));
     useWizardStore.getState().setConversion(emptyChart, []);
@@ -181,7 +232,7 @@ describe('wizardStore session map + conversion', () => {
 
   test('reselecting the SAME track preserves the session and conversion', () => {
     const sc = score([track(0, true, 40)]);
-    useWizardStore.getState().loadScore('a.gp', sc); // auto-selects track 0
+    useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc); // auto-selects track 0
     useWizardStore.getState().startSession(DEFAULT_MIDI_MAP, DEFAULT_CONVERSION_SETTINGS);
     const edited = applyRemap(DEFAULT_MIDI_MAP, 51, 'yellowCymbal');
     useWizardStore.getState().setSessionMap(edited);
@@ -197,7 +248,7 @@ describe('wizardStore session map + conversion', () => {
     useWizardStore.getState().setSessionMap(applyRemap(DEFAULT_MIDI_MAP, 51, 'yellowCymbal'));
     useWizardStore.getState().setConversion(emptyChart, []);
 
-    useWizardStore.getState().loadScore('b.gp', score([track(0, true, 5)]));
+    useWizardStore.getState().loadScore('b.gp', GP_BYTES, score([track(0, true, 5)]));
     let s = useWizardStore.getState();
     expect(s.sessionMap).toBeNull();
     expect(s.chart).toBeNull();
@@ -302,7 +353,7 @@ describe('wizardStore preview state', () => {
 
   test('selecting a different track clears chart-derived preview state', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
-    useWizardStore.getState().loadScore('a.gp', sc);
+    useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc);
     useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'greenTom', accented: false });
     useWizardStore.getState().deleteNote({ tick: 4, midi: 40 });
     useWizardStore.getState().setViewTime(5);
@@ -510,7 +561,7 @@ describe('sessionSettings', () => {
 
   test('selectTrack with a different id clears settingsDirty', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
-    useWizardStore.getState().loadScore('a.gp', sc);
+    useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc);
     useWizardStore.getState().startSession(DEFAULT_MIDI_MAP, DEFAULT_CONVERSION_SETTINGS);
     useWizardStore
       .getState()
@@ -520,4 +571,55 @@ describe('sessionSettings', () => {
     useWizardStore.getState().selectTrack(1);
     expect(useWizardStore.getState().settingsDirty).toBe(false);
   });
+});
+
+describe('restoreSession', () => {
+  test('lands on Preview with the blob’s chart, edits, metadata and offset', () => {
+    restore();
+    const s = useWizardStore.getState();
+    expect(s.step).toBe('preview');
+    expect(s.gpFilePath).toBe('C:/songs/song.gp');
+    expect(Array.from(s.gpFileBytes ?? [])).toEqual(Array.from(GP_BYTES));
+    expect(s.selectedTrackId).toBe(3);
+    expect(s.chart).toEqual(restoredChart);
+    expect(s.overrides).toEqual(blob().overrides);
+    expect(s.deletions).toEqual(blob().deletions);
+    expect(s.previewRemaps).toEqual(blob().previewRemaps);
+    expect(s.metadata).toEqual(blob().metadata);
+    expect(s.audioOffsetMs).toBe(-120);
+    expect(s.audioExtension).toBe('ogg');
+    expect(Array.from(s.audioBytes ?? [])).toEqual([9, 9, 9]);
+  });
+
+  test('baselines the restored map and settings so the session does not read dirty', () => {
+    restore();
+    const s = useWizardStore.getState();
+    expect(s.mapDirty).toBe(false);
+    expect(s.settingsDirty).toBe(false);
+    expect(s.baselineMap).toEqual(blob().sessionMap);
+    expect(s.baselineSettings).toEqual(blob().sessionSettings);
+  });
+
+  test('leaves the decoded audio buffer unset for the Preview step to fill', () => {
+    restore();
+    expect(useWizardStore.getState().audioBuffer).toBeNull();
+    expect(useWizardStore.getState().audioBytes).not.toBeNull();
+  });
+
+  test('discards any session already in progress', () => {
+    useWizardStore
+      .getState()
+      .loadScore('other.gp', new Uint8Array([1]), score([track(0, true, 9)]));
+    useWizardStore.getState().goToStep('mapping');
+    restore();
+    const s = useWizardStore.getState();
+    expect(s.gpFilePath).toBe('C:/songs/song.gp');
+    expect(s.selectedTrackId).toBe(3);
+    expect(s.step).toBe('preview');
+  });
+});
+
+test('loadScore retains the GP file bytes for the session blob', () => {
+  useWizardStore.getState().loadScore('a.gp', GP_BYTES, score([track(0, true, 40)]));
+  expect(Array.from(useWizardStore.getState().gpFileBytes ?? [])).toEqual(Array.from(GP_BYTES));
 });

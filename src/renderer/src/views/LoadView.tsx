@@ -33,7 +33,7 @@ export function LoadView() {
         setError('This file has no drum track. GP2SNG only converts files with a drum track.');
         return;
       }
-      loadScore(picked.path, parsed);
+      loadScore(picked.path, picked.bytes, parsed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The file could not be loaded.');
     } finally {
