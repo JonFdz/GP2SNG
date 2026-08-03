@@ -1,6 +1,6 @@
 {
   "name": "gp2sng",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Convert Guitar Pro files to YARG .sng charts",
   "license": "GPL-3.0-only",
