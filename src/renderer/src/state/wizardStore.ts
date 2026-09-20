@@ -17,6 +17,7 @@ import type {
 } from '../../../shared/types/index';
 import { DEFAULT_CONVERSION_SETTINGS, YARG_NOTE_IDS } from '../../../shared/types/index';
 import { detectDrumTrack } from './detectDrumTrack';
+import { reopenedOutputFilenameOverride } from './outputFilename';
 
 // Default highway scroll speed in px/s (docs/DESIGN.md → Highway scroll speed):
 // a view-only preference, not persisted.
@@ -153,6 +154,7 @@ export interface WizardState {
   // global MIDI map?" prompt must not fire merely because the original session had
   // diverged from the global map.
   restoreSession: (args: {
+    sngFilePath: string;
     gpFilePath: string;
     gpFileBytes: Uint8Array;
     score: ParsedGpScore;
@@ -257,7 +259,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       score,
       selectedTrackId: detectDrumTrack(score.tracks),
     }),
-  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes }) =>
+  restoreSession: ({ sngFilePath, gpFilePath, gpFileBytes, score, blob, audioBytes }) =>
     set({
       ...INITIAL,
       step: 'preview',
@@ -274,6 +276,11 @@ export const useWizardStore = create<WizardState>((set) => ({
       chart: blob.chart,
       warnings: blob.warnings,
       metadata: blob.metadata,
+      outputFilenameOverride: reopenedOutputFilenameOverride(
+        sngFilePath,
+        blob.metadata.name,
+        blob.metadata.artist,
+      ),
       // The AudioContext lives on the Preview step, so the buffer is decoded there
       // from these bytes rather than here.
       audioBytes,

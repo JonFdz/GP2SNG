@@ -68,8 +68,9 @@ function blob(): SessionBlob {
   };
 }
 
-function restore(): void {
+function restore(sngFilePath = 'C:/songs/Song - Artist.sng'): void {
   useWizardStore.getState().restoreSession({
+    sngFilePath,
     gpFilePath: 'C:/songs/song.gp',
     gpFileBytes: GP_BYTES,
     score: score([track(3, true, 40)]),
@@ -217,7 +218,16 @@ describe('output filename override', () => {
     useWizardStore.getState().setOutputFilenameOverride('Previous custom name');
     restore();
     expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+    useWizardStore.getState().setMetadata({ artist: 'New Artist' });
+    expect(currentFilename()).toBe('Song - New Artist.sng');
     expect(blob()).not.toHaveProperty('outputFilenameOverride');
+  });
+
+  test('restoring a renamed .sng uses its filename as the override', () => {
+    restore('C:/songs/My Favourite Chart.sng');
+    expect(useWizardStore.getState().outputFilenameOverride).toBe('My Favourite Chart');
+    useWizardStore.getState().setMetadata({ artist: 'New Artist' });
+    expect(currentFilename()).toBe('My Favourite Chart.sng');
   });
 });
 

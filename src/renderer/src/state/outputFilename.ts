@@ -26,3 +26,15 @@ export function outputFilename(
   const sanitized = base.replace(/[<>:"/\\|?*]/g, '_');
   return `${sanitized}.sng`;
 }
+
+// A reopened .sng's actual filesystem name is its export name. Keep automatic
+// mode only when that name matches what the current metadata would export.
+export function reopenedOutputFilenameOverride(
+  sngFilePath: string,
+  songName: string,
+  artist: string,
+): string | null {
+  const openedBase = withoutSngExtension(sngFilePath.split(/[\\/]/).pop() ?? '');
+  const automatic = outputFilename(songName, artist, null);
+  return automatic !== null && openedBase === withoutSngExtension(automatic) ? null : openedBase;
+}

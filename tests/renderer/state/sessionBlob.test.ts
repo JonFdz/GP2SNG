@@ -62,6 +62,7 @@ describe('buildSessionBlob', () => {
     expect(blob.deletions).toBe(deletions);
     expect(blob.metadata).toBe(metadata);
     expect(blob.audioOffsetMs).toBe(-120);
+    expect(blob).not.toHaveProperty('outputFilenameOverride');
   });
 
   // Regression for the branch's highest-risk line: FinalizeView.doWrite must pass

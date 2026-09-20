@@ -54,6 +54,7 @@ export function LoadView() {
       // parsed in the renderer: parse errors belong in the runtime that shows them.
       const parsed = parseGp(blob.gpBytes);
       restoreSession({
+        sngFilePath: picked.path,
         gpFilePath: blob.gpFilePath,
         gpFileBytes: blob.gpBytes,
         score: parsed,

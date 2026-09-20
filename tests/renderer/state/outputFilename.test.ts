@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   automaticOutputFilenameBase,
   outputFilename,
+  reopenedOutputFilenameOverride,
   withoutSngExtension,
 } from '../../../src/renderer/src/state/outputFilename';
 
@@ -40,5 +41,34 @@ describe('outputFilename', () => {
   test('requires song and artist in automatic mode', () => {
     expect(outputFilename(' ', 'Artist', null)).toBeNull();
     expect(outputFilename('Song', ' ', null)).toBeNull();
+  });
+});
+
+describe('reopenedOutputFilenameOverride', () => {
+  test('keeps automatic mode when the opened name matches the current default', () => {
+    expect(
+      reopenedOutputFilenameOverride('C:\\Charts\\Song - Artist.sng', 'Song', 'Artist'),
+    ).toBeNull();
+    expect(
+      reopenedOutputFilenameOverride('/charts/Song - Artist.SNG', 'Song', 'Artist'),
+    ).toBeNull();
+  });
+
+  test('restores a custom export name without the extension', () => {
+    expect(
+      reopenedOutputFilenameOverride('C:\\Charts\\Artist - Song - Custom.sng', 'Song', 'Artist'),
+    ).toBe('Artist - Song - Custom');
+  });
+
+  test('uses an externally renamed filename as the custom name', () => {
+    expect(reopenedOutputFilenameOverride('/charts/My Custom Name.SNG', 'Song', 'Artist')).toBe(
+      'My Custom Name',
+    );
+  });
+
+  test('compares against the same sanitized filename used for export', () => {
+    expect(
+      reopenedOutputFilenameOverride('/charts/AC_DC_ - Band_Name.sng', 'AC/DC:', 'Band?Name'),
+    ).toBeNull();
   });
 });
