@@ -146,14 +146,16 @@ export function readSngSession(sngBytes: Uint8Array): RestoredSession {
     );
   }
 
-  // Prefer PNG for the compatibility case where an existing container includes
-  // both names. New exports contain at most one artwork member.
+  // Compatibility readers prefer PNG, then the canonical JPEG name, then its
+  // legacy spelling. New exports contain at most one artwork member.
   const albumArt =
     files['album.png'] !== undefined
       ? { bytes: files['album.png'], extension: 'png' as const }
       : files['album.jpg'] !== undefined
         ? { bytes: files['album.jpg'], extension: 'jpg' as const }
-        : undefined;
+        : files['album.jpeg'] !== undefined
+          ? { bytes: files['album.jpeg'], extension: 'jpg' as const }
+          : undefined;
 
   return { blob, audioBytes: files[audioName], albumArt };
 }

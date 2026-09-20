@@ -55,6 +55,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [albumArtError, setAlbumArtError] = useState<string | null>(null);
+  const [albumArtLoading, setAlbumArtLoading] = useState(false);
   const [albumArtUrl, setAlbumArtUrl] = useState<string | null>(null);
   const albumArtInputRef = useRef<HTMLInputElement>(null);
 
@@ -187,12 +188,15 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       setAlbumArtError('Choose a PNG or JPEG image.');
       return;
     }
+    setAlbumArtLoading(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       setAlbumArt({ bytes, extension: extension === 'png' ? 'png' : 'jpg' });
       setAlbumArtError(null);
     } catch {
       setAlbumArtError('Could not read that image file. Pick a different file.');
+    } finally {
+      setAlbumArtLoading(false);
     }
   }
 
@@ -217,11 +221,17 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 type="button"
                 className="btn"
                 onClick={() => albumArtInputRef.current?.click()}
+                disabled={albumArtLoading}
               >
                 {albumArt === null ? 'Choose artwork' : 'Change'}
               </button>
               {albumArt !== null && (
-                <button type="button" className="btn btn--destructive" onClick={clearAlbumArt}>
+                <button
+                  type="button"
+                  className="btn btn--destructive"
+                  onClick={clearAlbumArt}
+                  disabled={albumArtLoading}
+                >
                   Remove
                 </button>
               )}
@@ -282,7 +292,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 type="button"
                 className="btn btn--affirmative"
                 onClick={handleSave}
-                disabled={!isMetadataValid(gpMetadata) || saving}
+                disabled={!isMetadataValid(gpMetadata) || saving || albumArtLoading}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>

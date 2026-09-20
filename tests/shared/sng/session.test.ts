@@ -174,15 +174,35 @@ describe('readSngSession', () => {
     expect(Array.from(reexported.files['album.jpg'])).toEqual(Array.from(art.bytes));
   });
 
-  it('prefers album.png when a pre-existing SNG contains both artwork names', () => {
+  it('restores album.jpeg as JPEG artwork unchanged', () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0xcc]);
+    const sng = buildSngContainer(
+      [
+        { name: 'notes.mid', bytes: buildMidi(chart) },
+        { name: 'song.ogg', bytes: audio.bytes },
+        { name: 'album.jpeg', bytes: jpeg },
+        { name: 'gp2sng.json', bytes: encodeSessionBlob(sampleBlob()) },
+      ],
+      [],
+      new Uint8Array(16),
+    );
+
+    const restored = readSngSession(sng);
+    expect(restored.albumArt?.extension).toBe('jpg');
+    expect(Array.from(restored.albumArt?.bytes ?? [])).toEqual(Array.from(jpeg));
+  });
+
+  it('prefers album.png, then album.jpg, then album.jpeg when multiple names exist', () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
     const jpg = new Uint8Array([0xff, 0xd8, 0xff]);
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xee]);
     const both = buildSngContainer(
       [
         { name: 'notes.mid', bytes: buildMidi(chart) },
         { name: 'song.ogg', bytes: audio.bytes },
         { name: 'album.png', bytes: png },
         { name: 'album.jpg', bytes: jpg },
+        { name: 'album.jpeg', bytes: jpeg },
         { name: 'gp2sng.json', bytes: encodeSessionBlob(sampleBlob()) },
       ],
       [],
@@ -192,6 +212,26 @@ describe('readSngSession', () => {
     const restored = readSngSession(both);
     expect(restored.albumArt?.extension).toBe('png');
     expect(Array.from(restored.albumArt?.bytes ?? [])).toEqual(Array.from(png));
+  });
+
+  it('prefers album.jpg over album.jpeg', () => {
+    const jpg = new Uint8Array([0xff, 0xd8, 0xff]);
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xee]);
+    const sng = buildSngContainer(
+      [
+        { name: 'notes.mid', bytes: buildMidi(chart) },
+        { name: 'song.ogg', bytes: audio.bytes },
+        { name: 'album.jpg', bytes: jpg },
+        { name: 'album.jpeg', bytes: jpeg },
+        { name: 'gp2sng.json', bytes: encodeSessionBlob(sampleBlob()) },
+      ],
+      [],
+      new Uint8Array(16),
+    );
+
+    const restored = readSngSession(sng);
+    expect(restored.albumArt?.extension).toBe('jpg');
+    expect(Array.from(restored.albumArt?.bytes ?? [])).toEqual(Array.from(jpg));
   });
 
   it('restores a session with no artwork as before', () => {
