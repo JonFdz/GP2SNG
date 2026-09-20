@@ -15,8 +15,12 @@ import type {
   YargChart,
   YargNoteId,
 } from '../../../shared/types/index';
-import { DEFAULT_CONVERSION_SETTINGS, YARG_NOTE_IDS } from '../../../shared/types/index';
-import { detectDrumTrack } from './detectDrumTrack';
+import {
+  DEFAULT_CONVERSION_SETTINGS,
+  SessionRestoreError,
+  YARG_NOTE_IDS,
+} from '../../../shared/types/index';
+import { detectDrumTracks } from './detectDrumTracks';
 
 // Default highway scroll speed in px/s (docs/DESIGN.md → Highway scroll speed):
 // a view-only preference, not persisted.
@@ -104,7 +108,7 @@ export interface WizardState {
   // depends on the original file still being on disk.
   gpFileBytes: Uint8Array | null;
   score: ParsedGpScore | null;
-  selectedTrackId: number | null;
+  selectedTrackIds: number[];
   // Session-local MIDI map for the Mapping step: a clone of the global map, edited
   // session-locally. Null until the Mapping step initializes it.
   sessionMap: MidiMap | null;
@@ -141,7 +145,7 @@ export interface WizardState {
   deletions: SeqDeletion[]; // gems removed from the displayed chart (Delete gem / unassign)
   previewRemaps: PreviewRemap[]; // "all notes on MIDI n" reassigns done in Preview
 
-  // Load a freshly parsed score. Auto-selects the drum track (FUNCTIONALITY step
+  // Load a freshly parsed score. Auto-selects all drum-kit tracks (FUNCTIONALITY step
   // 4) and returns to the Load step so any forward progress is discarded — the
   // "changing an upstream decision invalidates downstream state" rule.
   loadScore: (path: string, bytes: Uint8Array, score: ParsedGpScore) => void;
@@ -158,10 +162,10 @@ export interface WizardState {
     blob: SessionBlob;
     audioBytes: Uint8Array;
   }) => void;
-  selectTrack: (trackId: number) => void;
+  toggleTrack: (trackId: number) => void;
   // Initialize the session map from the global map on entering Mapping. A no-op
   // once a session already exists, so re-entering the step preserves session edits
-  // (only an upstream change — via selectTrack/loadScore — clears them).
+  // (only an upstream change — via toggleTrack/loadScore — clears them).
   startSession: (globalMap: MidiMap, settings: ConversionSettings) => void;
   setSessionMap: (next: MidiMap) => void;
   setSessionSettings: (next: ConversionSettings) => void;
@@ -198,7 +202,7 @@ const INITIAL = {
   gpFilePath: null,
   gpFileBytes: null,
   score: null,
-  selectedTrackId: null,
+  selectedTrackIds: [] as number[],
   sessionMap: null,
   mapDirty: false,
   sessionSettings: DEFAULT_CONVERSION_SETTINGS,
@@ -229,13 +233,14 @@ const INITIAL = {
 export function canAdvance(
   step: WizardStep,
   score: ParsedGpScore | null,
-  selectedTrackId: number | null,
+  selectedTrackIds: readonly number[],
 ): boolean {
   switch (step) {
     case 'load': {
-      if (score === null || selectedTrackId === null) return false;
-      const t = score.tracks.find((track) => track.id === selectedTrackId);
-      return t !== undefined && t.noteCount > 0;
+      if (score === null || selectedTrackIds.length === 0) return false;
+      return score.tracks.some(
+        (track) => selectedTrackIds.includes(track.id) && track.noteCount > 0,
+      );
     }
     case 'preview':
       return true;
@@ -252,16 +257,22 @@ export const useWizardStore = create<WizardState>((set) => ({
       gpFilePath: path,
       gpFileBytes: bytes,
       score,
-      selectedTrackId: detectDrumTrack(score.tracks),
+      selectedTrackIds: detectDrumTracks(score.tracks),
     }),
-  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes }) =>
+  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes }) => {
+    if (blob.selectedTrackIds.some((id) => !score.tracks.some((track) => track.id === id))) {
+      throw new SessionRestoreError(
+        "This .sng's GP2SNG session data is corrupt. Re-convert it from the original Guitar Pro file.",
+        { selectedTrackIds: blob.selectedTrackIds },
+      );
+    }
     set({
       ...INITIAL,
       step: 'preview',
       gpFilePath,
       gpFileBytes,
       score,
-      selectedTrackId: blob.selectedTrackId,
+      selectedTrackIds: [...blob.selectedTrackIds],
       sessionMap: blob.sessionMap,
       baselineMap: blob.sessionMap,
       mapDirty: false,
@@ -279,25 +290,30 @@ export const useWizardStore = create<WizardState>((set) => ({
       overrides: blob.overrides,
       deletions: blob.deletions,
       previewRemaps: blob.previewRemaps,
+    });
+  },
+  toggleTrack: (trackId) =>
+    set((s) => {
+      if (!s.score?.tracks.some((track) => track.id === trackId)) return {};
+      const selected = new Set(s.selectedTrackIds);
+      if (selected.has(trackId)) selected.delete(trackId);
+      else selected.add(trackId);
+      return {
+        selectedTrackIds: s.score.tracks
+          .filter((track) => selected.has(track.id))
+          .map((track) => track.id),
+        sessionMap: null,
+        mapDirty: false,
+        settingsDirty: false,
+        chart: null,
+        warnings: [],
+        // Chart-derived preview state is invalid once the selected tracks change.
+        overrides: [],
+        deletions: [],
+        previewRemaps: [],
+        viewTime: 0,
+      };
     }),
-  selectTrack: (trackId) =>
-    set((s) =>
-      trackId === s.selectedTrackId
-        ? {}
-        : {
-            selectedTrackId: trackId,
-            sessionMap: null,
-            mapDirty: false,
-            settingsDirty: false,
-            chart: null,
-            warnings: [],
-            // Chart-derived preview state is invalid once the track changes.
-            overrides: [],
-            deletions: [],
-            previewRemaps: [],
-            viewTime: 0,
-          },
-    ),
   startSession: (globalMap, settings) =>
     set((s) => {
       if (s.sessionMap !== null) return {};
@@ -314,7 +330,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       };
     }),
   // Editing the session map invalidates the last conversion (the "upstream change
-  // invalidates downstream state" rule, as selectTrack does), so preview/finalize
+  // invalidates downstream state" rule, as toggleTrack does), so preview/finalize
   // re-gate to unreachable until Confirm mapping rebuilds the chart. mapDirty tracks
   // divergence from the seed, so reverting an edit back to it clears the §10 prompt.
   setSessionMap: (next) =>

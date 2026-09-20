@@ -37,7 +37,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const reset = useWizardStore((s) => s.reset);
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
   const gpFileBytes = useWizardStore((s) => s.gpFileBytes);
-  const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
+  const selectedTrackIds = useWizardStore((s) => s.selectedTrackIds);
   const sessionMap = useWizardStore((s) => s.sessionMap);
   const sessionSettings = useWizardStore((s) => s.sessionSettings);
   const warnings = useWizardStore((s) => s.warnings);
@@ -71,7 +71,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
     metadata === null ||
     gpFileBytes === null ||
     sessionMap === null ||
-    selectedTrackId === null ||
+    selectedTrackIds.length === 0 ||
     gpFilePath === null
   ) {
     return null;
@@ -80,7 +80,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const gpMetadata = metadata;
   const gpBytes = gpFileBytes;
   const map = sessionMap;
-  const trackId = selectedTrackId;
+  const trackIds = selectedTrackIds;
   const filePath = gpFilePath;
   const errors = metadataErrors(gpMetadata);
 
@@ -101,7 +101,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       const session = buildSessionBlob({
         gpFilePath: filePath,
         gpBytes,
-        selectedTrackId: trackId,
+        selectedTrackIds: trackIds,
         sessionMap: map,
         sessionSettings,
         chart: gpChart,

@@ -49,7 +49,7 @@ function sampleBlob(): SessionBlob {
     gpFilePath: 'C:/songs/song.gp',
     // Deliberately includes 0x00 and high bytes: base64 must survive both.
     gpBytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0x7f]),
-    selectedTrackId: 2,
+    selectedTrackIds: [2],
     sessionMap: DEFAULT_MIDI_MAP,
     sessionSettings: DEFAULT_CONVERSION_SETTINGS,
     chart,
@@ -65,15 +65,63 @@ function sampleBlob(): SessionBlob {
 
 describe('session blob codec', () => {
   it('round-trips every member, GP bytes included', () => {
-    const blob = sampleBlob();
+    const blob = { ...sampleBlob(), selectedTrackIds: [2, 4] };
     const decoded = decodeSessionBlob(encodeSessionBlob(blob));
     expect(decoded).toEqual(blob);
     expect(Array.from(decoded.gpBytes)).toEqual(Array.from(blob.gpBytes));
   });
 
-  it('refuses a blob written by a different version', () => {
-    const bytes = encodeSessionBlob({ ...sampleBlob(), version: SESSION_BLOB_VERSION + 1 });
-    expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
+  it('writes version 3 and the array-only track selection', () => {
+    expect(SESSION_BLOB_VERSION).toBe(3);
+    const raw = reparse(sampleBlob());
+    expect(raw.selectedTrackIds).toEqual([2]);
+    expect(raw).not.toHaveProperty('selectedTrackId');
+  });
+
+  it('normalizes a valid V2 track ID to the current model', () => {
+    const raw = reparse(sampleBlob());
+    raw.version = 2;
+    delete raw.selectedTrackIds;
+    raw.selectedTrackId = 2;
+    const decoded = decodeSessionBlob(new TextEncoder().encode(JSON.stringify(raw)));
+    expect(decoded.version).toBe(3);
+    expect(decoded.selectedTrackIds).toEqual([2]);
+    expect(decoded).not.toHaveProperty('selectedTrackId');
+  });
+
+  it.each([undefined, null, '2', 2.5])('rejects malformed V2 selectedTrackId %s', (id) => {
+    const raw = reparse(sampleBlob());
+    raw.version = 2;
+    delete raw.selectedTrackIds;
+    if (id !== undefined) raw.selectedTrackId = id;
+    expect(() => decodeSessionBlob(new TextEncoder().encode(JSON.stringify(raw)))).toThrow(
+      SessionRestoreError,
+    );
+  });
+
+  it.each([
+    undefined,
+    null,
+    [],
+    [2, 2],
+    [2, '4'],
+    [2.5],
+    2,
+  ])('rejects malformed V3 selectedTrackIds %s', (ids) => {
+    const raw = reparse(sampleBlob());
+    if (ids === undefined) delete raw.selectedTrackIds;
+    else raw.selectedTrackIds = ids;
+    expect(() => decodeSessionBlob(new TextEncoder().encode(JSON.stringify(raw)))).toThrow(
+      SessionRestoreError,
+    );
+  });
+
+  it.each([
+    1,
+    SESSION_BLOB_VERSION + 1,
+  ])('refuses unsupported version %i with a version mismatch', (version) => {
+    const bytes = encodeSessionBlob({ ...sampleBlob(), version });
+    expect(() => decodeSessionBlob(bytes)).toThrow(/different version/);
   });
 
   it('refuses a blob with no version field at all as corrupt, not "different version"', () => {

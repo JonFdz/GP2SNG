@@ -67,7 +67,7 @@ function describeError(error: ChartError): string {
 export function PreviewView() {
   const score = useWizardStore((s) => s.score);
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
-  const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
+  const selectedTrackIds = useWizardStore((s) => s.selectedTrackIds);
   const chart = useWizardStore((s) => s.chart);
   const warnings = useWizardStore((s) => s.warnings);
   const audioBuffer = useWizardStore((s) => s.audioBuffer);
@@ -300,7 +300,7 @@ export function PreviewView() {
   );
 
   // The wizard only routes here after a successful conversion.
-  if (chart === null || score === null || selectedTrackId === null) {
+  if (chart === null || score === null || selectedTrackIds.length === 0) {
     return null;
   }
   // Non-null locals so the handler closures keep the narrowing (TS drops
@@ -308,7 +308,7 @@ export function PreviewView() {
   const scheduler = schedulerRef.current;
   const gpScore = score;
   const gpChart = chart;
-  const gpTrackId = selectedTrackId;
+  const gpTrackIds = selectedTrackIds;
 
   function stopPlayback(at: number) {
     scheduler.stop();
@@ -448,7 +448,7 @@ export function PreviewView() {
     const from: YargNoteId | null = cur ? (cur.accented ? `${cur.note}Accented` : cur.note) : null;
     const nextMap = applyRemap(currentMap, midi, target);
     try {
-      const result = convertToYargChart(gpScore, gpTrackId, nextMap, sessionSettings);
+      const result = convertToYargChart(gpScore, gpTrackIds, nextMap, sessionSettings);
       // Commit the map edit only after a successful re-convert (recordPreviewRemap
       // sets the session map); a failed reassign must not wipe the current chart.
       recordPreviewRemap({ midi, from, to: target, nextMap });
@@ -479,7 +479,7 @@ export function PreviewView() {
     if (entry === undefined) return;
     const revertMap = applyRemap(sessionMap ?? globalMap, midi, entry.from);
     try {
-      const result = convertToYargChart(gpScore, gpTrackId, revertMap, sessionSettings);
+      const result = convertToYargChart(gpScore, gpTrackIds, revertMap, sessionSettings);
       removePreviewRemap(midi, revertMap);
       setConversion(result.chart, result.warnings);
     } catch (err) {
