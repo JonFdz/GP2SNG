@@ -23,7 +23,10 @@ export function TempoSection({
   onApplyOffset,
 }: Props) {
   const gpBpm = originalOpeningBpm(score);
-  const multiple = chart.tempoMap.length > 1;
+  const openingUs = chart.tempoMap[0]?.usPerQuarter ?? 500000;
+  const multiple = chart.tempoMap.some(
+    (event) => Math.abs(event.usPerQuarter / openingUs - 1) > 0.0001,
+  );
   const displayed = multiple ? tempoScale * 100 : openingChartBpm(chart);
   const [draft, setDraft] = useState(displayed.toFixed(2));
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +81,7 @@ export function TempoSection({
     window.setTimeout(() => {
       if (epoch !== analysisEpoch.current) return;
       try {
-        setResult(analyzeTempo(chart, tempoScale, audioBuffer, audioPaddingMs));
+        setResult(analyzeTempo(chart, tempoScale, audioBuffer, audioPaddingMs, score));
       } catch {
         setResult({ kind: 'inconclusive' });
       }
@@ -92,9 +95,7 @@ export function TempoSection({
       <div className="settings-label">Tempo</div>
       <div className="transport__field">
         <span>{multiple ? 'GP tempo map' : 'GP tempo'}</span>
-        <strong>
-          {multiple ? `${chart.tempoMap.length} tempo events` : `${gpBpm.toFixed(2)} BPM`}
-        </strong>
+        <strong>{multiple ? 'Multiple tempo values' : `${gpBpm.toFixed(2)} BPM`}</strong>
       </div>
       <label className="transport__field">
         <span>{multiple ? 'Tempo adjustment' : 'Adjusted tempo'}</span>
@@ -213,8 +214,9 @@ export function TempoSection({
               </p>
               {result.mismatch !== undefined && (
                 <p>
-                  Possible mismatch near bar {result.mismatch.bar}. GP tempo change:{' '}
-                  {result.mismatch.fromBpm.toFixed(0)} → {result.mismatch.toBpm.toFixed(0)} BPM.
+                  Possible mismatch near bar {result.mismatch.bar}. GP tempo{' '}
+                  {result.mismatch.ramp ? 'ramp' : 'change'}: {result.mismatch.fromBpm.toFixed(0)} →{' '}
+                  {result.mismatch.toBpm.toFixed(0)} BPM.
                 </p>
               )}
             </>

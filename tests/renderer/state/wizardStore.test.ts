@@ -632,6 +632,51 @@ describe('restoreSession', () => {
     expect(s.selectedTrackId).toBe(3);
     expect(s.step).toBe('preview');
   });
+
+  test('derives a 71→71.5 correction from a saved chart and reapplies it on reconversion', () => {
+    const gp = score([track(3, true, 40)]);
+    gp.masterBars = [
+      {
+        timeSignature: { numerator: 4, denominator: 4 },
+        section: null,
+        repeatStart: false,
+        repeatEnd: false,
+        repeatCount: 0,
+        alternateEndings: [],
+        hasDirections: false,
+      },
+    ];
+    gp.tempoAutomations = [{ bar: 0, position: 0, bpm: 71, linear: false }];
+    const savedChart: YargChart = {
+      ...restoredChart,
+      tempoMap: [{ tick: 0, usPerQuarter: Math.round(60000000 / 71.5) }],
+      leadInTicks: 1920,
+    };
+    const savedBlob = { ...blob(), chart: savedChart };
+    expect('tempoScale' in savedBlob).toBe(false);
+    useWizardStore.getState().restoreSession({
+      gpFilePath: 'song.gp',
+      gpFileBytes: GP_BYTES,
+      score: gp,
+      blob: savedBlob,
+      audioBytes: new Uint8Array(),
+    });
+    expect(useWizardStore.getState().tempoScale).toBeCloseTo(71.5 / 71, 5);
+    expect(useWizardStore.getState().chart?.tempoMap).toEqual(savedChart.tempoMap);
+
+    const unadjusted: YargChart = {
+      ...savedChart,
+      tempoMap: [{ tick: 0, usPerQuarter: Math.round(60000000 / 71) }],
+    };
+    useWizardStore.getState().setConversion(unadjusted, []);
+    const converted = useWizardStore.getState().chart;
+    expect(converted).not.toBeNull();
+    expect(60000000 / (converted?.tempoMap[0].usPerQuarter ?? 1)).toBeCloseTo(71.5, 2);
+    expect(useWizardStore.getState().tempoScale).toBeCloseTo(71.5 / 71, 5);
+
+    useWizardStore.getState().loadScore('different.gp', GP_BYTES, score([track(0, true, 1)]));
+    expect(useWizardStore.getState().tempoScale).toBe(1);
+  });
 });
 
 test('loadScore retains the GP file bytes for the session blob', () => {

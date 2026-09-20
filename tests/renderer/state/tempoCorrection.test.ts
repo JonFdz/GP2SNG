@@ -45,10 +45,17 @@ describe('tempo correction', () => {
     second.tempoMap.forEach((event, i) => {
       expect(event.usPerQuarter).toBeCloseTo(direct.tempoMap[i].usPerQuarter, -1);
     });
+    expect(direct.tempoMap.map((event) => event.usPerQuarter)).toEqual([
+      Math.round(60000000 / 144), // 120 BPM × 1.20
+      Math.round(60000000 / 180), // 150 BPM × 1.20
+    ]);
     expect(second.tempoMap.map((e) => e.tick)).toEqual([0, 3840]);
-    expect(second.notes).toBe(safeChart.notes);
-    expect(second.sections).toBe(safeChart.sections);
-    expect(second.timeSignatures).toBe(safeChart.timeSignatures);
+    expect(second.notes).toEqual(safeChart.notes);
+    expect(second.notes.map((note) => note.tick)).toEqual([2400]);
+    expect(second.sections).toEqual(safeChart.sections);
+    expect(second.sections.map((section) => section.tick)).toEqual([3840]);
+    expect(second.timeSignatures).toEqual(safeChart.timeSignatures);
+    expect(second.timeSignatures.map((signature) => signature.tick)).toEqual([0]);
     expect(second.endTick).toBe(safeChart.endTick);
     expect(second.leadInTicks).toBe(safeChart.leadInTicks);
     expect(scaleChartTempo(second, 1.2, 1).tempoMap[0].usPerQuarter).toBeCloseTo(500000, -1);
@@ -74,6 +81,11 @@ describe('tempo correction', () => {
     };
     const slowSaved = scaleChartTempo(slow, 1, 71.5 / 71);
     expect(deriveTempoScale(score(71), slowSaved)).toBeCloseTo(71.5 / 71, 5);
+    const independentlySaved = {
+      ...slow,
+      tempoMap: [{ tick: 0, usPerQuarter: Math.round(60000000 / 71.5) }],
+    };
+    expect(deriveTempoScale(score(71), independentlySaved)).toBeCloseTo(71.5 / 71, 5);
     expect(deriveTempoScale(score(0), saved)).toBe(1);
     expect(
       deriveTempoScale(score(120), { ...chart, tempoMap: [{ tick: 0, usPerQuarter: 0 }] }),
