@@ -22,6 +22,7 @@ import { ChartCanvas } from '../components/ChartCanvas';
 import { GemContextMenu, type ReassignScope } from '../components/GemContextMenu';
 import { HelpIcon } from '../components/HelpIcon';
 import { MinimapCanvas } from '../components/MinimapCanvas';
+import { TempoSection } from '../components/TempoSection';
 import { yargNoteLabel } from '../components/YargNoteSwatch';
 import {
   nextBarStart,
@@ -69,6 +70,8 @@ export function PreviewView() {
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
   const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
   const chart = useWizardStore((s) => s.chart);
+  const tempoScale = useWizardStore((s) => s.tempoScale);
+  const setTempoScale = useWizardStore((s) => s.setTempoScale);
   const warnings = useWizardStore((s) => s.warnings);
   const audioBuffer = useWizardStore((s) => s.audioBuffer);
   const audioBytes = useWizardStore((s) => s.audioBytes);
@@ -763,6 +766,19 @@ export function PreviewView() {
             />
           </label>
         </section>
+
+        <TempoSection
+          chart={gpChart}
+          score={gpScore}
+          tempoScale={tempoScale}
+          audioBuffer={audioBuffer}
+          audioPaddingMs={audioPaddingMs}
+          onApplyTempo={(scale) => {
+            if (scheduler.isPlaying) stopPlayback(scheduler.currentChartTime());
+            setTempoScale(scale);
+          }}
+          onApplyOffset={handleOffsetChange}
+        />
 
         {errors.length > 0 && (
           <section className="transport">

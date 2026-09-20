@@ -1121,6 +1121,41 @@ body {
   width: 96px;
 }
 
+.tempo-section__edit,
+.tempo-section__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tempo-section__edit .text-input {
+  width: 110px;
+}
+
+.tempo-section__result {
+  border-top: 1px solid var(--bg-raised);
+  padding-top: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tempo-section__result p {
+  margin: 8px 0;
+  color: var(--text-muted);
+}
+
+.tempo-section__result dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+}
+
+.tempo-section__result dd {
+  margin: 0;
+  font-weight: 600;
+}
+
 /* Metadata form */
 .metadata-form {
   display: flex;
