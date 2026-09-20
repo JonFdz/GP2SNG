@@ -3,8 +3,10 @@ import { previewAudioOffsetSeconds } from '../../../src/renderer/src/audio/expor
 import {
   analyzeTempo,
   authoredTempoPoints,
+  globalWindowStarts,
   type PcmAudio,
 } from '../../../src/renderer/src/audio/tempoAnalysis';
+import type { TempoAnalysisDiagnostics } from '../../../src/renderer/src/audio/tempoAnalysisDiagnostics';
 import { computeAudioStart } from '../../../src/renderer/src/playback/scheduler';
 import { buildTempoMap, tickToSeconds } from '../../../src/shared/convert/timing';
 import type { GpTempoAutomation, ParsedGpScore, YargChart } from '../../../src/shared/types/index';
@@ -147,6 +149,153 @@ function boundarySensitiveChart(bpm: number): YargChart {
 }
 
 describe('GP-prior tempo analysis', () => {
+  test('one isolated offset alias does not veto a strong uniform correction', () => {
+    const c = chart(144);
+    const baseTimes = c.notes.map(
+      (note) => ((note.tick - c.leadInTicks) / 480) * (60 / 147) + 0.81,
+    );
+    const region = c.notes
+      .map((note, index) => ({
+        time: ((note.tick - c.leadInTicks) / 480) * (60 / 144),
+        index,
+      }))
+      .filter(({ time }) => time >= 90 && time < 108);
+    // An extra rhythmic layer wins only this full window. Neighboring windows
+    // still prefer the source attacks, which remain present throughout the song.
+    const aliases = region.map(({ index }) => baseTimes[index] - 1.22);
+    const omitted = new Set(region.filter((_, i) => i % 7 === 0).map(({ index }) => index));
+    const audio = pulses([...baseTimes.filter((_, i) => !omitted.has(i)), ...aliases], 180);
+    let debug: TempoAnalysisDiagnostics | undefined;
+    const result = analyzeTempo(c, 1, audio, 0, undefined, (value) => {
+      debug = value;
+    });
+    expect(result.kind).toBe('uniformTempoAdjustment');
+    expect(144 * (result.scale ?? 0)).toBeCloseTo(147, 0);
+    expect(result.confidence).toBe('Medium');
+    expect(debug?.globalValidation?.acceptedViaRobustConsensus).toBe(true);
+    expect(debug?.globalValidation?.outlierWindowCount).toBeGreaterThan(0);
+    expect(debug?.fallback.selectedBoundarySource).toBe('none');
+  });
+
+  test('sustained offset structure wins even with a 90% global consensus', () => {
+    const c = chart(144);
+    c.notes = Array.from({ length: 6 }, (_, repeat) =>
+      c.notes.map((note) => ({ ...note, tick: note.tick + repeat * 360 * 480 })),
+    ).flat();
+    c.endTick = c.leadInTicks + 2160 * 480;
+    const times = c.notes.map((note) => {
+      const beat = (note.tick - c.leadInTicks) / 480;
+      return beat * (60 / 147) + (beat < 1980 ? 0.21 : 1.43);
+    });
+    let debug: TempoAnalysisDiagnostics | undefined;
+    const result = analyzeTempo(c, 1, pulses(times, 920), 0, undefined, (value) => {
+      debug = value;
+    });
+    expect(result.kind).toBe('tempoMapMismatch');
+    expect(debug?.globalValidation?.inlierRatio).toBeGreaterThanOrEqual(0.9);
+    expect(debug?.globalValidation?.acceptedViaRobustConsensus).toBe(false);
+  });
+
+  test.each([150, 160])('authored 147 → %i at bar 69 is a local mismatch', (wrongBpm) => {
+    const c = chart(147);
+    // Enough independent windows on both sides of bar 69.
+    c.notes = [...c.notes, ...c.notes.map((note) => ({ ...note, tick: note.tick + 360 * 480 }))];
+    c.endTick = c.leadInTicks + 720 * 480;
+    c.tempoMap.push({
+      tick: c.leadInTicks + 272 * 480,
+      usPerQuarter: Math.round(60000000 / wrongBpm),
+    });
+    const gp = score(147, [{ bar: 68, position: 0, bpm: wrongBpm, linear: false }]);
+    let debug: TempoAnalysisDiagnostics | undefined;
+    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147), 0, gp, (value) => {
+      debug = value;
+    });
+    expect(result.kind).toBe('tempoMapMismatch');
+    expect(result.mismatch).toMatchObject({ bar: 69, fromBpm: 147, toBpm: wrongBpm });
+    expect(debug?.globalValidation?.acceptedViaRobustConsensus).toBe(false);
+    expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(wrongBpm === 160);
+    if (wrongBpm === 160) {
+      expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(true);
+      const candidate = debug?.authoredAttribution.candidates.find(
+        (candidate) => candidate.bar === 69,
+      );
+      expect(candidate?.afterScaleMedian).toBeCloseTo(147 / 160, 2);
+    }
+  });
+
+  test('extended attribution distinguishes a correct earlier change from the wrong event', () => {
+    const c = chart(147);
+    c.notes = [...c.notes, ...c.notes.map((note) => ({ ...note, tick: note.tick + 360 * 480 }))];
+    c.endTick = c.leadInTicks + 720 * 480;
+    c.tempoMap.push(
+      { tick: c.leadInTicks + 80 * 480, usPerQuarter: Math.round(60000000 / 149) },
+      { tick: c.leadInTicks + 272 * 480, usPerQuarter: Math.round(60000000 / 160) },
+    );
+    const recording = audioFor({ ...c, tempoMap: c.tempoMap.slice(0, 2) });
+    const gp = score(147, [
+      { bar: 20, position: 0, bpm: 149, linear: false },
+      { bar: 68, position: 0, bpm: 160, linear: false },
+    ]);
+    let debug: TempoAnalysisDiagnostics | undefined;
+    const result = analyzeTempo(c, 1, recording, 0, gp, (value) => {
+      debug = value;
+    });
+    expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(true);
+    expect(result.kind).toBe('tempoMapMismatch');
+    expect(result.mismatch).toMatchObject({ bar: 69, fromBpm: 149, toBpm: 160 });
+  });
+
+  test('lost post-event audio evidence alone cannot earn an extended attribution', () => {
+    const c = chart(147);
+    c.notes = [...c.notes, ...c.notes.map((note) => ({ ...note, tick: note.tick + 360 * 480 }))];
+    c.endTick = c.leadInTicks + 720 * 480;
+    c.tempoMap.push({ tick: c.leadInTicks + 272 * 480, usPerQuarter: Math.round(60000000 / 160) });
+    const recording = recordedAtBpm(
+      { ...c, notes: c.notes.filter((note) => note.tick < c.leadInTicks + 272 * 480) },
+      147,
+    );
+    const gp = score(147, [{ bar: 68, position: 0, bpm: 160, linear: false }]);
+    let debug: TempoAnalysisDiagnostics | undefined;
+    const result = analyzeTempo(c, 1, recording, 0, gp, (value) => {
+      debug = value;
+    });
+    expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(true);
+    expect(result.kind).toBe('inconclusive');
+    expect(result.mismatch).toBeUndefined();
+  });
+
+  test('a whole-song 160 vs 147 mismatch cannot unlock the wider diagnostic range', () => {
+    const c = chart(160);
+    let debug: TempoAnalysisDiagnostics | undefined;
+    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147), 0, score(160), (value) => {
+      debug = value;
+    });
+    expect(result.kind).not.toBe('uniformTempoAdjustment');
+    expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(false);
+    expect(debug?.search?.bestScale).toBeGreaterThanOrEqual(0.9489);
+  });
+
+  test('global search-edge corrections have at most Medium confidence', () => {
+    const c = chart(155);
+    let debug: TempoAnalysisDiagnostics | undefined;
+    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147), 0, undefined, (value) => {
+      debug = value;
+    });
+    expect(debug?.search?.nearScaleBoundary).toBe(true);
+    expect(result.kind).toBe('uniformTempoAdjustment');
+    expect(result.confidence).toBe('Medium');
+  });
+
+  test.each([
+    180, 180.000144, 179.999856,
+  ])('final window is unique and end-anchored at %f seconds', (duration) => {
+    const starts = globalWindowStarts(duration);
+    expect(starts.at(-1)).toBe(duration - 18);
+    for (let i = 1; i < starts.length; i++) expect(starts[i] - starts[i - 1]).toBeGreaterThan(0.01);
+    expect(starts.filter((start) => Math.abs(start - 162) < 0.01)).toHaveLength(1);
+    expect(globalWindowStarts(duration)).toEqual(starts);
+  });
+
   test('exact alignment', () => {
     const c = chart();
     expect(analyzeTempo(c, 1, audioFor(c)).kind).toBe('aligned');

@@ -41,6 +41,8 @@ export interface AuthoredCandidateDiagnostic {
   fromBpm: number;
   toBpm: number;
   ramp: boolean;
+  beforeLocalFits: { center: number; scale: number; score: number }[];
+  afterLocalFits: { center: number; scale: number; score: number }[];
   beforeWindowCount: number;
   afterWindowCount: number;
   beforeMedianScore: number | null;
@@ -70,6 +72,7 @@ export interface AuthoredCandidateDiagnostic {
     | 'scaleChangeTooSmall'
     | 'beforeScaleSpreadTooLarge'
     | 'afterScaleSpreadTooLarge'
+    | 'inconsistentExtendedEvidence'
   )[];
 }
 
@@ -126,6 +129,11 @@ export interface TempoAnalysisDiagnostics {
     medianResidualSeconds: number | null;
     maxResidualSeconds: number | null;
     stable: boolean;
+    inlierWindowCount: number;
+    outlierWindowCount: number;
+    inlierRatio: number;
+    outlierWindows: { center: number; offsetSeconds: number }[];
+    acceptedViaRobustConsensus: boolean;
     minAcceptedWindowScore: number | null;
     medianAcceptedWindowScore: number | null;
     maxAcceptedWindowScore: number | null;
@@ -136,6 +144,8 @@ export interface TempoAnalysisDiagnostics {
   };
   fallback: {
     entered: boolean;
+    extendedDiagnosticSearchUsed: boolean;
+    extendedScaleRange?: { min: number; max: number };
     entryReasons: ('insufficientGlobalCoverage' | 'unstableGlobalOffsets')[];
     localWindowCount?: number;
     acceptedLocalWindows?: number;
@@ -185,6 +195,7 @@ export function createTempoAnalysisDiagnostics(
     },
     fallback: {
       entered: false,
+      extendedDiagnosticSearchUsed: false,
       entryReasons: [],
       boundariesEvaluated: false,
       regionalScaleBoundary: null,
@@ -268,6 +279,8 @@ export function authoredCandidateMeasurements(
   const secondOffset = side(offsetAfter);
   return {
     ...change,
+    beforeLocalFits: before.map(({ center, scale, score }) => ({ center, scale, score })),
+    afterLocalFits: after.map(({ center, scale, score }) => ({ center, scale, score })),
     beforeWindowCount: before.length,
     afterWindowCount: after.length,
     beforeMedianScore: first?.score ?? null,
