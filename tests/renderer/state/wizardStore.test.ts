@@ -365,6 +365,31 @@ describe('wizardStore preview state', () => {
     expect(useWizardStore.getState().audioPaddingMs).toBe(0);
   });
 
+  test('album artwork can be set, replaced, removed, restored, and reset', () => {
+    const png = { bytes: new Uint8Array([1, 2, 3]), extension: 'png' as const };
+    const jpg = { bytes: new Uint8Array([4, 5, 6]), extension: 'jpg' as const };
+    useWizardStore.getState().setAlbumArt(png);
+    expect(useWizardStore.getState().albumArt).toBe(png);
+
+    useWizardStore.getState().setAlbumArt(jpg);
+    expect(useWizardStore.getState().albumArt).toBe(jpg);
+    useWizardStore.getState().clearAlbumArt();
+    expect(useWizardStore.getState().albumArt).toBeNull();
+
+    useWizardStore.getState().restoreSession({
+      gpFilePath: 'C:/songs/song.gp',
+      gpFileBytes: GP_BYTES,
+      score: score([track(3, true, 40)]),
+      blob: blob(),
+      audioBytes: new Uint8Array([9, 9, 9]),
+      albumArt: png,
+    });
+    expect(useWizardStore.getState().albumArt).toBe(png);
+
+    useWizardStore.getState().reset();
+    expect(useWizardStore.getState().albumArt).toBeNull();
+  });
+
   test('selecting a different track clears chart-derived preview state', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
     useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc);

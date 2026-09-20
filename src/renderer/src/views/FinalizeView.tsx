@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { tickToSeconds } from '../../../shared/convert/index';
 import { writeSng } from '../../../shared/sng/index';
@@ -33,8 +33,11 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const audioBytes = useWizardStore((s) => s.audioBytes);
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
   const audioPaddingMs = useWizardStore((s) => s.audioPaddingMs);
+  const albumArt = useWizardStore((s) => s.albumArt);
   const setMetadata = useWizardStore((s) => s.setMetadata);
   const reset = useWizardStore((s) => s.reset);
+  const setAlbumArt = useWizardStore((s) => s.setAlbumArt);
+  const clearAlbumArt = useWizardStore((s) => s.clearAlbumArt);
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
   const gpFileBytes = useWizardStore((s) => s.gpFileBytes);
   const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
@@ -51,6 +54,9 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [albumArtError, setAlbumArtError] = useState<string | null>(null);
+  const [albumArtUrl, setAlbumArtUrl] = useState<string | null>(null);
+  const albumArtInputRef = useRef<HTMLInputElement>(null);
 
   // Seed the metadata form from the parsed score on first entry.
   useEffect(() => {
@@ -59,6 +65,20 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
 
   // Keep the "Saving to" field aligned with Settings until the user overrides it.
   useEffect(() => setSaveDir(outputDir ?? ''), [outputDir]);
+
+  useEffect(() => {
+    if (albumArt === null) {
+      setAlbumArtUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([albumArt.bytes], {
+        type: albumArt.extension === 'jpg' ? 'image/jpeg' : 'image/png',
+      }),
+    );
+    setAlbumArtUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [albumArt]);
 
   const displayed = useMemo(
     () => (chart === null ? [] : displayedNotes(chart.notes, overrides, deletions)),
@@ -113,7 +133,14 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
         audioOffsetMs,
         audioPaddingMs: paddingMs,
       });
-      const bytes = writeSng(displayedChart, gpMetadata, audio, audioOffsetMs, session);
+      const bytes = writeSng(
+        displayedChart,
+        gpMetadata,
+        audio,
+        audioOffsetMs,
+        session,
+        albumArt ?? undefined,
+      );
       await window.gp2sng.writeSng(dir, filename, bytes);
       setSaved(true);
       setSaveError(null);
@@ -151,12 +178,67 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
 
   const filenamePreview = `${sanitizeFilename(gpMetadata.name)}.sng`;
 
+  async function handleAlbumArtFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow selecting the same file after replacing or removing it
+    if (file === undefined) return;
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (extension !== 'png' && extension !== 'jpg' && extension !== 'jpeg') {
+      setAlbumArtError('Choose a PNG or JPEG image.');
+      return;
+    }
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      setAlbumArt({ bytes, extension: extension === 'png' ? 'png' : 'jpg' });
+      setAlbumArtError(null);
+    } catch {
+      setAlbumArtError('Could not read that image file. Pick a different file.');
+    }
+  }
+
   return (
     <div className="finalize">
       <h1 className="view-title">Finalize</h1>
       <p className="view-hint">Review the song details and choose where to save the .sng file.</p>
 
       <MetadataForm metadata={gpMetadata} errors={errors} onChange={setMetadata} />
+
+      <section className="save-section">
+        <div className="save-section__dir">
+          <div className="settings-label">Album artwork</div>
+          <div className="album-art">
+            {albumArtUrl === null ? (
+              <span className="album-art__empty">No artwork selected</span>
+            ) : (
+              <img className="album-art__preview" src={albumArtUrl} alt="Album artwork" />
+            )}
+            <div className="album-art__actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => albumArtInputRef.current?.click()}
+              >
+                {albumArt === null ? 'Choose artwork' : 'Change'}
+              </button>
+              {albumArt !== null && (
+                <button type="button" className="btn btn--destructive" onClick={clearAlbumArt}>
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <input
+          ref={albumArtInputRef}
+          type="file"
+          accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+          hidden
+          onChange={handleAlbumArtFile}
+        />
+        {albumArtError !== null && (
+          <div className="error-banner error-banner--inline">{albumArtError}</div>
+        )}
+      </section>
 
       <section className="save-section">
         <div className="save-section__dir">

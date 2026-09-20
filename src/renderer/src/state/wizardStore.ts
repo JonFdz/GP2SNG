@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  AlbumArt,
   ConversionSettings,
   ConversionWarning,
   CymbalPriorities,
@@ -131,6 +132,7 @@ export interface WizardState {
   audioBytes: Uint8Array | null; // original source bytes, bundled by the writer
   audioOffsetMs: number; // the SNG `delay` value
   audioPaddingMs: number; // silence already prepended to audioBytes
+  albumArt: AlbumArt | null; // opaque image bytes, stored as its own SNG member
   viewTime: number; // seconds from chart start currently at the hit line
   pixelsPerSecond: number; // highway scroll speed (view-only preference)
   previewVolume: number; // preview audio gain, 1 = 100% (view-only preference)
@@ -157,6 +159,7 @@ export interface WizardState {
     score: ParsedGpScore;
     blob: SessionBlob;
     audioBytes: Uint8Array;
+    albumArt?: AlbumArt;
   }) => void;
   selectTrack: (trackId: number) => void;
   // Initialize the session map from the global map on entering Mapping. A no-op
@@ -169,6 +172,8 @@ export interface WizardState {
   setMetadata: (patch: Partial<SongMetadata>) => void;
   setAudio: (audio: { buffer: AudioBuffer; bytes: Uint8Array; paddingMs: number }) => void;
   clearAudio: () => void;
+  setAlbumArt: (albumArt: AlbumArt) => void;
+  clearAlbumArt: () => void;
   setAudioOffsetMs: (ms: number) => void;
   setViewTime: (t: number) => void;
   setPixelsPerSecond: (pps: number) => void;
@@ -212,6 +217,7 @@ const INITIAL = {
   audioBytes: null,
   audioOffsetMs: 0,
   audioPaddingMs: 0,
+  albumArt: null,
   viewTime: 0,
   pixelsPerSecond: DEFAULT_PIXELS_PER_SECOND,
   previewVolume: 1,
@@ -254,7 +260,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       score,
       selectedTrackId: detectDrumTrack(score.tracks),
     }),
-  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes }) =>
+  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes, albumArt }) =>
     set({
       ...INITIAL,
       step: 'preview',
@@ -276,6 +282,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       audioBytes,
       audioOffsetMs: blob.audioOffsetMs,
       audioPaddingMs: blob.audioPaddingMs,
+      albumArt: albumArt ?? null,
       overrides: blob.overrides,
       deletions: blob.deletions,
       previewRemaps: blob.previewRemaps,
@@ -341,6 +348,8 @@ export const useWizardStore = create<WizardState>((set) => ({
   setAudio: ({ buffer, bytes, paddingMs }) =>
     set({ audioBuffer: buffer, audioBytes: bytes, audioPaddingMs: paddingMs }),
   clearAudio: () => set({ audioBuffer: null, audioBytes: null, audioPaddingMs: 0 }),
+  setAlbumArt: (albumArt) => set({ albumArt }),
+  clearAlbumArt: () => set({ albumArt: null }),
   setAudioOffsetMs: (ms) => set({ audioOffsetMs: ms }),
   setViewTime: (t) => set({ viewTime: t }),
   setPixelsPerSecond: (pps) => set({ pixelsPerSecond: pps }),
