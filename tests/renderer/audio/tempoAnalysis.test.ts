@@ -6,7 +6,6 @@ import {
   globalWindowStarts,
   type PcmAudio,
 } from '../../../src/renderer/src/audio/tempoAnalysis';
-import type { TempoAnalysisDiagnostics } from '../../../src/renderer/src/audio/tempoAnalysisDiagnostics';
 import { computeAudioStart } from '../../../src/renderer/src/playback/scheduler';
 import { buildTempoMap, tickToSeconds } from '../../../src/shared/convert/timing';
 import type { GpTempoAutomation, ParsedGpScore, YargChart } from '../../../src/shared/types/index';
@@ -165,16 +164,10 @@ describe('GP-prior tempo analysis', () => {
     const aliases = region.map(({ index }) => baseTimes[index] - 1.22);
     const omitted = new Set(region.filter((_, i) => i % 7 === 0).map(({ index }) => index));
     const audio = pulses([...baseTimes.filter((_, i) => !omitted.has(i)), ...aliases], 180);
-    let debug: TempoAnalysisDiagnostics | undefined;
-    const result = analyzeTempo(c, 1, audio, 0, undefined, (value) => {
-      debug = value;
-    });
+    const result = analyzeTempo(c, 1, audio);
     expect(result.kind).toBe('uniformTempoAdjustment');
     expect(144 * (result.scale ?? 0)).toBeCloseTo(147, 0);
     expect(result.confidence).toBe('Medium');
-    expect(debug?.globalValidation?.acceptedViaRobustConsensus).toBe(true);
-    expect(debug?.globalValidation?.outlierWindowCount).toBeGreaterThan(0);
-    expect(debug?.fallback.selectedBoundarySource).toBe('none');
   });
 
   test('sustained offset structure wins even with a 90% global consensus', () => {
@@ -187,13 +180,8 @@ describe('GP-prior tempo analysis', () => {
       const beat = (note.tick - c.leadInTicks) / 480;
       return beat * (60 / 147) + (beat < 1980 ? 0.21 : 1.43);
     });
-    let debug: TempoAnalysisDiagnostics | undefined;
-    const result = analyzeTempo(c, 1, pulses(times, 920), 0, undefined, (value) => {
-      debug = value;
-    });
+    const result = analyzeTempo(c, 1, pulses(times, 920));
     expect(result.kind).toBe('tempoMapMismatch');
-    expect(debug?.globalValidation?.inlierRatio).toBeGreaterThanOrEqual(0.9);
-    expect(debug?.globalValidation?.acceptedViaRobustConsensus).toBe(false);
   });
 
   test.each([150, 160])('authored 147 → %i at bar 69 is a local mismatch', (wrongBpm) => {
@@ -206,21 +194,9 @@ describe('GP-prior tempo analysis', () => {
       usPerQuarter: Math.round(60000000 / wrongBpm),
     });
     const gp = score(147, [{ bar: 68, position: 0, bpm: wrongBpm, linear: false }]);
-    let debug: TempoAnalysisDiagnostics | undefined;
-    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147), 0, gp, (value) => {
-      debug = value;
-    });
+    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147), 0, gp);
     expect(result.kind).toBe('tempoMapMismatch');
     expect(result.mismatch).toMatchObject({ bar: 69, fromBpm: 147, toBpm: wrongBpm });
-    expect(debug?.globalValidation?.acceptedViaRobustConsensus).toBe(false);
-    expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(wrongBpm === 160);
-    if (wrongBpm === 160) {
-      expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(true);
-      const candidate = debug?.authoredAttribution.candidates.find(
-        (candidate) => candidate.bar === 69,
-      );
-      expect(candidate?.afterScaleMedian).toBeCloseTo(147 / 160, 2);
-    }
   });
 
   test('extended attribution distinguishes a correct earlier change from the wrong event', () => {
@@ -236,11 +212,7 @@ describe('GP-prior tempo analysis', () => {
       { bar: 20, position: 0, bpm: 149, linear: false },
       { bar: 68, position: 0, bpm: 160, linear: false },
     ]);
-    let debug: TempoAnalysisDiagnostics | undefined;
-    const result = analyzeTempo(c, 1, recording, 0, gp, (value) => {
-      debug = value;
-    });
-    expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(true);
+    const result = analyzeTempo(c, 1, recording, 0, gp);
     expect(result.kind).toBe('tempoMapMismatch');
     expect(result.mismatch).toMatchObject({ bar: 69, fromBpm: 149, toBpm: 160 });
   });
@@ -255,33 +227,20 @@ describe('GP-prior tempo analysis', () => {
       147,
     );
     const gp = score(147, [{ bar: 68, position: 0, bpm: 160, linear: false }]);
-    let debug: TempoAnalysisDiagnostics | undefined;
-    const result = analyzeTempo(c, 1, recording, 0, gp, (value) => {
-      debug = value;
-    });
-    expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(true);
+    const result = analyzeTempo(c, 1, recording, 0, gp);
     expect(result.kind).toBe('inconclusive');
     expect(result.mismatch).toBeUndefined();
   });
 
   test('a whole-song 160 vs 147 mismatch cannot unlock the wider diagnostic range', () => {
     const c = chart(160);
-    let debug: TempoAnalysisDiagnostics | undefined;
-    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147), 0, score(160), (value) => {
-      debug = value;
-    });
+    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147), 0, score(160));
     expect(result.kind).not.toBe('uniformTempoAdjustment');
-    expect(debug?.fallback.extendedDiagnosticSearchUsed).toBe(false);
-    expect(debug?.search?.bestScale).toBeGreaterThanOrEqual(0.9489);
   });
 
   test('global search-edge corrections have at most Medium confidence', () => {
     const c = chart(155);
-    let debug: TempoAnalysisDiagnostics | undefined;
-    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147), 0, undefined, (value) => {
-      debug = value;
-    });
-    expect(debug?.search?.nearScaleBoundary).toBe(true);
+    const result = analyzeTempo(c, 1, recordedAtBpm(c, 147));
     expect(result.kind).toBe('uniformTempoAdjustment');
     expect(result.confidence).toBe('Medium');
   });

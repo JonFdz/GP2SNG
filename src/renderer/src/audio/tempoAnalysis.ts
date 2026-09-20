@@ -2,17 +2,6 @@ import { expandTimeline } from '../../../shared/convert/timeline';
 import { barTicks, tickToSeconds } from '../../../shared/convert/timing';
 import type { ParsedGpScore, YargChart } from '../../../shared/types/index';
 import { scaleChartTempo } from '../state/tempoCorrection';
-// TEMPORARY QA DIAGNOSTICS. Remove after real-audio tempo analysis calibration.
-import {
-  authoredCandidateMeasurements,
-  compactDiagnosticWindows,
-  createTempoAnalysisDiagnostics,
-  retainCoarseCandidate,
-  type ScaleCandidateDiagnostic,
-  type TempoAnalysisDecisionReason,
-  type TempoAnalysisDiagnostics,
-  type WindowDiagnostic,
-} from './tempoAnalysisDiagnostics';
 
 export type TempoAnalysisKind =
   | 'aligned'
@@ -432,15 +421,9 @@ function attributedTempoChange(
   chart: YargChart,
   score: ParsedGpScore | undefined,
   windows: WindowFit[],
-  diagnostics?: TempoAnalysisDiagnostics,
-  offsetWindows?: WindowFit[],
   extendedFits?: Map<number, WindowFit[]>,
 ): TempoAnalysisResult['mismatch'] {
-  const attribution = diagnostics?.authoredAttribution;
-  if (score === undefined) {
-    if (attribution) attribution.finalReason = 'noScoreAvailable';
-    return undefined;
-  }
+  if (score === undefined) return undefined;
   const points = authoredTempoPoints(chart, score);
   const candidates: { index: number; strength: number }[] = [];
   for (let i = 1; i < points.length; i++) {
@@ -461,46 +444,12 @@ function attributedTempoChange(
           (i + 1 === points.length || w.center + T.windowSeconds / 2 <= points[i + 1].time),
       )
       .slice(0, 4);
-    // TEMPORARY measurements only. None of these values drives attribution.
-    const measurement = attribution
-      ? authoredCandidateMeasurements(
-          {
-            bar: point.bar,
-            timeSeconds: point.time,
-            fromBpm: points[i - 1].bpm,
-            toBpm: point.bpm,
-            ramp: points[i - 1].linear,
-          },
-          before,
-          after,
-          median,
-          lineFit,
-          {
-            windows: offsetWindows ?? [],
-            previousEventTime: points[i - 1].time,
-            nextEventTime: points[i + 1]?.time ?? Number.POSITIVE_INFINITY,
-            halfWindowSeconds: T.windowSeconds / 2,
-          },
-        )
-      : undefined;
-    if (measurement) attribution?.candidates.push(measurement);
-    if (before.length < T.minAuthoredSideWindows || after.length < T.minAuthoredSideWindows) {
-      if (before.length < T.minAuthoredSideWindows)
-        measurement?.rejectionReasons.push('notEnoughBeforeWindows');
-      if (after.length < T.minAuthoredSideWindows)
-        measurement?.rejectionReasons.push('notEnoughAfterWindows');
+    if (before.length < T.minAuthoredSideWindows || after.length < T.minAuthoredSideWindows)
       continue;
-    }
     if (
       median(before.map((w) => w.score)) < T.minStructuralWindowScore ||
       median(after.map((w) => w.score)) < T.minStructuralWindowScore
     ) {
-      if (measurement) {
-        if (median(before.map((w) => w.score)) < T.minStructuralWindowScore)
-          measurement.rejectionReasons.push('beforeScoreTooLow');
-        if (median(after.map((w) => w.score)) < T.minStructuralWindowScore)
-          measurement.rejectionReasons.push('afterScoreTooLow');
-      }
       continue;
     }
     const first = median(before.map((w) => w.scale));
@@ -516,7 +465,6 @@ function attributedTempoChange(
         before.some((w) => Math.abs(w.scale - first) > T.maxRegionalScaleSpread) ||
         after.some((w) => Math.abs(w.scale - second) > T.maxRegionalScaleSpread))
     ) {
-      measurement?.rejectionReasons.push('inconsistentExtendedEvidence');
       continue;
     }
     if (
@@ -525,41 +473,17 @@ function attributedTempoChange(
       secondSpread <= T.maxRegionalScaleSpread
     ) {
       candidates.push({ index: i, strength: change - firstSpread - secondSpread });
-      if (measurement) {
-        measurement.acceptedAsCandidate = true;
-        measurement.candidateStrength = change - firstSpread - secondSpread;
-      }
-    } else if (measurement) {
-      if (change < T.minRegionalScaleChange)
-        measurement.rejectionReasons.push('scaleChangeTooSmall');
-      if (firstSpread > T.maxRegionalScaleSpread)
-        measurement.rejectionReasons.push('beforeScaleSpreadTooLarge');
-      if (secondSpread > T.maxRegionalScaleSpread)
-        measurement.rejectionReasons.push('afterScaleSpreadTooLarge');
     }
   }
   candidates.sort((a, b) => b.strength - a.strength);
-  if (attribution) {
-    attribution.candidateCount = candidates.length;
-    attribution.strongestCandidateStrength = candidates[0]?.strength;
-    attribution.secondCandidateStrength = candidates[1]?.strength;
-  }
   if (
     candidates.length === 0 ||
     (candidates.length > 1 &&
       candidates[0].strength < candidates[1].strength * T.minAttributionStrengthRatio)
   ) {
-    if (attribution)
-      attribution.finalReason = candidates.length === 0 ? 'noCandidates' : 'ambiguousCandidates';
     return undefined;
   }
-  if (attribution) {
-    attribution.finalReason = 'selectedUniqueCandidate';
-    const selected = candidates[0].index;
-    attribution.selectedBar = points[selected].bar;
-    attribution.selectedFromBpm = points[selected - 1].bpm;
-    attribution.selectedToBpm = points[selected].bpm;
-  }
+
   return tempoChange(points, candidates[0].index);
 }
 
@@ -602,108 +526,39 @@ function extendedAuthoredFits(
   return fits;
 }
 
-// TEMPORARY QA DIAGNOSTICS: the optional callback leaves the returned result
-// untouched. The UI supplies it only in development; ordinary calls collect nothing.
 export function analyzeTempo(
   chart: YargChart,
   currentScale: number,
   audio: PcmAudio,
   audioPaddingMs = 0,
   score?: ParsedGpScore,
-  onDiagnostics?: (diagnostics: TempoAnalysisDiagnostics) => void,
 ): TempoAnalysisResult {
-  const diagnostics = onDiagnostics
-    ? createTempoAnalysisDiagnostics(audio, currentScale, audioPaddingMs, T)
-    : undefined;
-  try {
-    return analyzeTempoCore(chart, currentScale, audio, audioPaddingMs, score, diagnostics);
-  } catch (error) {
-    if (diagnostics) {
-      diagnostics.finalReason = 'unexpectedError';
-      diagnostics.errorName = error instanceof Error ? error.name : typeof error;
-    }
-    throw error;
-  } finally {
-    if (diagnostics && onDiagnostics) {
-      // Diagnostics, including a failing console callback, must not affect results.
-      try {
-        compactDiagnosticWindows(diagnostics);
-        onDiagnostics(diagnostics);
-      } catch {
-        // TEMPORARY reporting must not mask an analyzer return or exception.
-      }
-    }
-  }
-}
-
-function analyzeTempoCore(
-  chart: YargChart,
-  currentScale: number,
-  audio: PcmAudio,
-  audioPaddingMs: number,
-  score: ParsedGpScore | undefined,
-  diagnostics?: TempoAnalysisDiagnostics,
-): TempoAnalysisResult {
-  const finish = (reason: TempoAnalysisDecisionReason, result: TempoAnalysisResult) => {
-    if (diagnostics) {
-      diagnostics.finalReason = reason;
-      diagnostics.result = { ...result };
-      if (result.mismatch) diagnostics.result.mismatch = { ...result.mismatch };
-    }
-    return result;
-  };
   const inconclusive: TempoAnalysisResult = { kind: 'inconclusive' };
   if (audio.sampleRate <= 0 || audio.numberOfChannels < 1 || !Number.isFinite(audioPaddingMs))
-    return finish('invalidAudio', inconclusive);
+    return inconclusive;
   let original: YargChart;
   try {
     original = scaleChartTempo(chart, currentScale, 1);
   } catch {
-    return finish(
-      !Number.isFinite(currentScale) || currentScale <= 0
-        ? 'invalidCurrentScale'
-        : 'baselineReconstructionFailed',
-      inconclusive,
-    );
+    return inconclusive;
   }
   const events = chartEvents(original);
   const duration =
     tickToSeconds(original.endTick, original.tempoMap, original.resolution) -
     tickToSeconds(original.leadInTicks, original.tempoMap, original.resolution);
-  if (diagnostics) {
-    diagnostics.durationSeconds = duration;
-    diagnostics.originalOpeningBpm = 60000000 / (original.tempoMap[0]?.usPerQuarter ?? 500000);
-    diagnostics.eventSummary = {
-      uniqueTicks: events.length,
-      strongEvents: events.filter((event) => event.weight === 1).length,
-      tomEvents: events.filter((event) => event.weight === 0.7).length,
-      cymbalOnlyEvents: events.filter((event) => event.weight === 0.1).length,
-      totalWeight: events.reduce((sum, event) => sum + event.weight, 0),
-    };
-  }
+
   if (
     events.length < T.minEventsPerWindow * T.minAnalyzableWindows ||
     duration < T.windowSeconds * 2
   )
-    return finish(
-      events.length < T.minEventsPerWindow * T.minAnalyzableWindows
-        ? 'insufficientEvents'
-        : 'songTooShort',
-      inconclusive,
-    );
+    return inconclusive;
   const envelope = onsetEnvelope(audio);
-  if (diagnostics) {
-    const nonZero = envelope.reduce((count, value) => count + (value !== 0 ? 1 : 0), 0);
-    diagnostics.audio.envelopeBuckets = envelope.length;
-    diagnostics.audio.nonZeroEnvelopeBuckets = nonZero;
-    diagnostics.audio.nonZeroRatio = envelope.length > 0 ? nonZero / envelope.length : 0;
-  }
-  if (envelope.every((v) => v === 0)) return finish('noOnsetEvidence', inconclusive);
+  if (envelope.every((v) => v === 0)) return inconclusive;
   const secondsPerBucket = bucketDuration(audio.sampleRate);
   const padding = audioPaddingMs / 1000;
   const sample = sparse(events, 400);
   let best = { scale: 1, offset: 0, score: -1 };
-  const topScaleCandidates: ScaleCandidateDiagnostic[] = [];
+
   // Narrow GP-prior search. Coarse 0.05% then fine 0.005%; offset is searched
   // jointly so a fixed audio delay cannot masquerade as a tempo change.
   for (
@@ -721,12 +576,6 @@ function analyzeTempoCore(
       0.04,
       secondsPerBucket,
     );
-    if (diagnostics)
-      retainCoarseCandidate(topScaleCandidates, {
-        scale,
-        offsetSeconds: fit.offset,
-        score: fit.score,
-      });
     if (fit.score > best.score) best = { scale, ...fit };
   }
   const coarse = best;
@@ -756,29 +605,8 @@ function analyzeTempoCore(
   const nearScaleBoundary =
     best.scale <= GLOBAL_SCALE_RANGE.min + T.scaleBoundaryMargin ||
     best.scale >= GLOBAL_SCALE_RANGE.max - T.scaleBoundaryMargin;
-  if (diagnostics) {
-    diagnostics.search = {
-      minScale: GLOBAL_SCALE_RANGE.min,
-      maxScale: GLOBAL_SCALE_RANGE.max,
-      fineMinScale: coarse.scale - 0.001,
-      fineMaxScale: coarse.scale + 0.001,
-      sampledEvents: sample.length,
-      bestScale: best.scale,
-      bestOffsetSeconds: best.offset,
-      bestScore: best.score,
-      baseScale: 1,
-      baseOffsetSeconds: base.offset,
-      baseScore: base.score,
-      alignmentImprovement: best.score - base.score,
-      differencePercent: (best.scale - 1) * 100,
-      boundaryProximityScale: T.scaleBoundaryMargin,
-      nearScaleBoundary,
-      topScaleCandidates,
-    };
-  }
 
   const windows: WindowFit[] = [];
-  const windowDiagnostics: WindowDiagnostic[] = [];
   const primaryWindows: WindowFit[] = [];
   const starts = globalWindowStarts(duration);
   const totalWindows = starts.length;
@@ -787,14 +615,6 @@ function analyzeTempoCore(
       (event) => event.time >= start && event.time < start + T.windowSeconds,
     );
     if (region.length < T.minEventsPerWindow) {
-      if (diagnostics)
-        windowDiagnostics.push({
-          start,
-          center: start + T.windowSeconds / 2,
-          eventCount: region.length,
-          accepted: false,
-          rejectionReason: 'tooFewEvents',
-        });
       continue;
     }
     const fit = searchOffset(
@@ -807,16 +627,6 @@ function analyzeTempoCore(
       0.02,
       secondsPerBucket,
     );
-    if (diagnostics)
-      windowDiagnostics.push({
-        start,
-        center: start + T.windowSeconds / 2,
-        eventCount: region.length,
-        accepted: fit.score >= T.minWindowScore,
-        rejectionReason: fit.score >= T.minWindowScore ? undefined : 'lowScore',
-        score: fit.score,
-        offsetSeconds: fit.offset,
-      });
     if (fit.score >= T.minWindowScore) {
       const window = { center: start + T.windowSeconds / 2, scale: best.scale, ...fit };
       windows.push(window);
@@ -833,37 +643,9 @@ function analyzeTempoCore(
   const improvement = best.score - base.score;
   const stable = residual <= T.maxUniformResidual && maxResidual <= T.maxUniformResidual * 2;
   const inliers = windows.filter((w) => Math.abs(w.offset - center) <= T.maxUniformResidual);
-  const outliers = windows.filter((w) => Math.abs(w.offset - center) > T.maxUniformResidual);
   const inlierRatio = windows.length > 0 ? inliers.length / windows.length : 0;
   let acceptedViaRobustConsensus = false;
   const differencePercent = (best.scale - 1) * 100;
-  if (diagnostics) {
-    const scores = windows.map((window) => window.score);
-    diagnostics.globalValidation = {
-      durationSeconds: duration,
-      totalWindows,
-      acceptedWindows: windows.length,
-      coverage: windows.length / totalWindows,
-      enoughGlobal,
-      medianOffsetSeconds: windows.length > 0 ? center : null,
-      medianResidualSeconds: windows.length > 0 ? residual : null,
-      maxResidualSeconds: windows.length > 0 ? maxResidual : null,
-      stable,
-      inlierWindowCount: inliers.length,
-      outlierWindowCount: outliers.length,
-      inlierRatio,
-      outlierWindows: outliers.map((w) => ({ center: w.center, offsetSeconds: w.offset })),
-      acceptedViaRobustConsensus,
-      minAcceptedWindowScore: scores.length > 0 ? Math.min(...scores) : null,
-      medianAcceptedWindowScore: scores.length > 0 ? median(scores) : null,
-      maxAcceptedWindowScore: scores.length > 0 ? Math.max(...scores) : null,
-      rejectedForTooFewEvents: windowDiagnostics.filter((w) => w.rejectionReason === 'tooFewEvents')
-        .length,
-      rejectedForLowScore: windowDiagnostics.filter((w) => w.rejectionReason === 'lowScore').length,
-      windows: windowDiagnostics,
-      omittedWindows: 0,
-    };
-  }
   const common = {
     scale: best.scale,
     offsetMs: Math.round(center * 1000),
@@ -871,53 +653,23 @@ function analyzeTempoCore(
     driftSecondsPerMinute: 60 * Math.abs(1 - 1 / best.scale),
   };
   if (!enoughGlobal || !stable) {
-    if (diagnostics) {
-      diagnostics.fallback.entered = true;
-      if (!enoughGlobal) diagnostics.fallback.entryReasons.push('insufficientGlobalCoverage');
-      if (!stable) diagnostics.fallback.entryReasons.push('unstableGlobalOffsets');
-    }
     const localWindowCount = Math.ceil(duration / T.windowSeconds);
     const local = localWindowFits(events, envelope, padding, secondsPerBucket, localWindowCount);
-    if (diagnostics) {
-      diagnostics.fallback.localWindowCount = localWindowCount;
-      diagnostics.fallback.acceptedLocalWindows = local.length;
-      diagnostics.fallback.localCoverage = local.length / localWindowCount;
-    }
     const enoughLocal = local.length / localWindowCount >= T.minCoverage;
     const regionalBoundary = enoughLocal ? regionalScaleBoundary(local) : null;
-    // TEMPORARY: also measure the offset boundary when the regional boundary
-    // wins. This pure diagnostic call cannot alter the existing ?? precedence.
     const offsetBoundary =
-      enoughLocal && (regionalBoundary === null || diagnostics !== undefined)
-        ? structuralBoundary(primaryWindows)
-        : null;
+      enoughLocal && regionalBoundary === null ? structuralBoundary(primaryWindows) : null;
     const boundary = regionalBoundary ?? offsetBoundary;
-    if (diagnostics) {
-      diagnostics.fallback.boundariesEvaluated = enoughLocal;
-      diagnostics.fallback.regionalScaleBoundary = regionalBoundary;
-      diagnostics.fallback.structuralBoundary = offsetBoundary;
-      diagnostics.fallback.selectedBoundary = boundary;
-      diagnostics.fallback.selectedBoundarySource =
-        regionalBoundary !== null
-          ? 'regionalScale'
-          : offsetBoundary !== null
-            ? 'offsetStructure'
-            : 'none';
-    }
     if (boundary !== null)
-      return finish('tempoMapMismatch', {
+      return {
         kind: 'tempoMapMismatch',
-        mismatch: attributedTempoChange(original, score, local, diagnostics, primaryWindows),
-      });
+        mismatch: attributedTempoChange(original, score, local),
+      };
     // Only authored changes can unlock wider diagnostic fits. They never feed
     // best/common or any automatic whole-song scale recommendation.
     if (score) {
       const points = authoredTempoPoints(original, score);
       if (points.some((point, i) => i > 0 && point.bpm !== points[i - 1].bpm)) {
-        if (diagnostics) {
-          diagnostics.fallback.extendedDiagnosticSearchUsed = true;
-          diagnostics.fallback.extendedScaleRange = LOCAL_DIAGNOSTIC_SCALE_RANGE;
-        }
         const extended = extendedAuthoredFits(
           points,
           events,
@@ -926,15 +678,8 @@ function analyzeTempoCore(
           secondsPerBucket,
           duration,
         );
-        const mismatch = attributedTempoChange(
-          original,
-          score,
-          [],
-          diagnostics,
-          primaryWindows,
-          extended,
-        );
-        if (mismatch) return finish('tempoMapMismatch', { kind: 'tempoMapMismatch', mismatch });
+        const mismatch = attributedTempoChange(original, score, [], extended);
+        if (mismatch) return { kind: 'tempoMapMismatch', mismatch };
       }
     }
     // A strong majority can survive isolated rhythmic aliases, but only after
@@ -945,31 +690,20 @@ function analyzeTempoCore(
       inlierRatio >= T.minUniformInlierRatio &&
       best.score >= T.minStructuralWindowScore &&
       improvement >= T.minAlignmentImprovement * 2;
-    if (diagnostics?.globalValidation)
-      diagnostics.globalValidation.acceptedViaRobustConsensus = acceptedViaRobustConsensus;
-    if (!acceptedViaRobustConsensus)
-      return finish(
-        enoughLocal ? 'noStructuralBoundary' : 'insufficientLocalCoverage',
-        inconclusive,
-      );
+    if (!acceptedViaRobustConsensus) return inconclusive;
   }
   if (
     Math.abs(best.scale - 1) <= T.alignedDriftTolerance &&
     improvement < T.minAlignmentImprovement
   ) {
-    return finish('aligned', { kind: 'aligned', ...common });
+    return { kind: 'aligned', ...common };
   }
   if (
     improvement < T.minAlignmentImprovement ||
     Math.abs(best.scale - 1) <= T.alignedDriftTolerance
   )
-    return finish(
-      improvement < T.minAlignmentImprovement
-        ? 'insufficientAlignmentImprovement'
-        : 'withinAlignedToleranceButImprovementUnexpected',
-      inconclusive,
-    );
-  return finish('uniformAdjustment', {
+    return inconclusive;
+  return {
     kind: 'uniformTempoAdjustment',
     ...common,
     confidence:
@@ -980,5 +714,5 @@ function analyzeTempoCore(
       improvement >= T.minAlignmentImprovement * 2
         ? 'High'
         : 'Medium',
-  });
+  };
 }
