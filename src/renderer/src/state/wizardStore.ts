@@ -127,6 +127,7 @@ export interface WizardState {
 
   // Preview-scoped state (docs/DESIGN.md → Chart preview → Data-model impact).
   metadata: SongMetadata | null; // editable form values, seeded from the score
+  outputFilenameOverride: string | null; // null follows song name + artist; never serialized
   audioBuffer: AudioBuffer | null; // decoded for playback
   audioBytes: Uint8Array | null; // original source bytes, bundled by the writer
   audioOffsetMs: number; // the SNG `delay` value
@@ -167,6 +168,7 @@ export interface WizardState {
   setSessionSettings: (next: ConversionSettings) => void;
   setConversion: (chart: YargChart, warnings: ConversionWarning[]) => void;
   setMetadata: (patch: Partial<SongMetadata>) => void;
+  setOutputFilenameOverride: (value: string | null) => void;
   setAudio: (audio: { buffer: AudioBuffer; bytes: Uint8Array; paddingMs: number }) => void;
   clearAudio: () => void;
   setAudioOffsetMs: (ms: number) => void;
@@ -208,6 +210,7 @@ const INITIAL = {
   chart: null,
   warnings: [] as ConversionWarning[],
   metadata: null,
+  outputFilenameOverride: null,
   audioBuffer: null,
   audioBytes: null,
   audioOffsetMs: 0,
@@ -338,6 +341,7 @@ export const useWizardStore = create<WizardState>((set) => ({
   setConversion: (chart, warnings) => set({ chart, warnings }),
   setMetadata: (patch) =>
     set((s) => ({ metadata: { ...(s.metadata ?? BLANK_METADATA), ...patch } })),
+  setOutputFilenameOverride: (value) => set({ outputFilenameOverride: value }),
   setAudio: ({ buffer, bytes, paddingMs }) =>
     set({ audioBuffer: buffer, audioBytes: bytes, audioPaddingMs: paddingMs }),
   clearAudio: () => set({ audioBuffer: null, audioBytes: null, audioPaddingMs: 0 }),

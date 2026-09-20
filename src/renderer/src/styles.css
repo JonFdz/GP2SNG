@@ -1188,6 +1188,32 @@ body {
   gap: 4px 12px;
 }
 
+.save-section__filename-field {
+  min-width: 0;
+}
+
+.save-section__filename-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.save-section__filename-controls .text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.save-section__extension,
+.save-section__hint {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.save-section__hint {
+  display: block;
+  margin-top: 4px;
+}
+
 .save-section__filename {
   font-size: 14px;
   color: var(--text-muted);

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { outputFilename } from '../../../src/renderer/src/state/outputFilename';
 import { canAdvance, useWizardStore } from '../../../src/renderer/src/state/wizardStore';
 import { applyRemap } from '../../../src/shared/midi/index';
 import {
@@ -167,6 +168,56 @@ describe('wizardStore', () => {
     useWizardStore.getState().setSessionMap(DEFAULT_MIDI_MAP);
     expect(useWizardStore.getState().chart).toBeNull();
     expect(useWizardStore.getState().warnings).toEqual([]);
+  });
+});
+
+describe('output filename override', () => {
+  function currentFilename(): string | null {
+    const { metadata, outputFilenameOverride } = useWizardStore.getState();
+    return outputFilename(metadata?.name ?? '', metadata?.artist ?? '', outputFilenameOverride);
+  }
+
+  test('defaults to automatic mode and follows metadata until customized', () => {
+    expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+    useWizardStore.getState().setMetadata({ name: 'Granite', artist: 'Sleep Token' });
+    expect(currentFilename()).toBe('Granite - Sleep Token.sng');
+    useWizardStore.getState().setMetadata({ artist: 'Sleep Token UK' });
+    expect(currentFilename()).toBe('Granite - Sleep Token UK.sng');
+  });
+
+  test('a custom override survives navigation and metadata edits until reset', () => {
+    useWizardStore.getState().setMetadata({ name: 'Granite', artist: 'Sleep Token' });
+    useWizardStore.getState().goToStep('finalize');
+    useWizardStore.getState().setOutputFilenameOverride('Sleep Token - Granite - Custom Chart');
+    useWizardStore.getState().goBack();
+    useWizardStore.getState().setMetadata({ artist: 'Sleep Token UK' });
+    useWizardStore.getState().goNext();
+    expect(useWizardStore.getState().step).toBe('finalize');
+    expect(useWizardStore.getState().outputFilenameOverride).toBe(
+      'Sleep Token - Granite - Custom Chart',
+    );
+    expect(currentFilename()).toBe('Sleep Token - Granite - Custom Chart.sng');
+    useWizardStore.getState().setOutputFilenameOverride(null);
+    expect(currentFilename()).toBe('Granite - Sleep Token UK.sng');
+  });
+
+  test('loading another score clears the override', () => {
+    useWizardStore.getState().setOutputFilenameOverride('Custom');
+    useWizardStore.getState().loadScore('new.gp', GP_BYTES, score([track(0, true, 5)]));
+    expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+  });
+
+  test('full reset clears the override', () => {
+    useWizardStore.getState().setOutputFilenameOverride('Custom');
+    useWizardStore.getState().reset();
+    expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+  });
+
+  test('restored sessions start in automatic mode without a blob field', () => {
+    useWizardStore.getState().setOutputFilenameOverride('Previous custom name');
+    restore();
+    expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+    expect(blob()).not.toHaveProperty('outputFilenameOverride');
   });
 });
 

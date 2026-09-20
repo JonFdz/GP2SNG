@@ -7,15 +7,14 @@ import { resolveFinalizeAudio } from '../audio/index';
 import { MetadataForm } from '../components/MetadataForm';
 import { displayedNotes } from '../playback/overrides';
 import { defaultMetadata, isMetadataValid, metadataErrors } from '../state/metadata';
+import {
+  automaticOutputFilenameBase,
+  outputFilename,
+  withoutSngExtension,
+} from '../state/outputFilename';
 import { buildSessionBlob } from '../state/sessionBlob';
 import { useSettingsStore } from '../state/settingsStore';
 import { useWizardStore } from '../state/wizardStore';
-
-// A filename safe for Windows/POSIX (docs/DESIGN.md → UI top-level structure → Save).
-function sanitizeFilename(name: string): string {
-  const cleaned = name.replace(/[<>:"/\\|?*]/g, '_').trim();
-  return cleaned === '' ? 'song' : cleaned;
-}
 
 // The Finalize step: the editable song-metadata form and the save destination,
 // split out of Preview so the chart-review surface stays focused. Save writes the
@@ -29,11 +28,13 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const overrides = useWizardStore((s) => s.overrides);
   const deletions = useWizardStore((s) => s.deletions);
   const metadata = useWizardStore((s) => s.metadata);
+  const outputFilenameOverride = useWizardStore((s) => s.outputFilenameOverride);
   const audioBuffer = useWizardStore((s) => s.audioBuffer);
   const audioBytes = useWizardStore((s) => s.audioBytes);
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
   const audioPaddingMs = useWizardStore((s) => s.audioPaddingMs);
   const setMetadata = useWizardStore((s) => s.setMetadata);
+  const setOutputFilenameOverride = useWizardStore((s) => s.setOutputFilenameOverride);
   const reset = useWizardStore((s) => s.reset);
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
   const gpFileBytes = useWizardStore((s) => s.gpFileBytes);
@@ -83,6 +84,10 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const trackId = selectedTrackId;
   const filePath = gpFilePath;
   const errors = metadataErrors(gpMetadata);
+  const filenameBase =
+    outputFilenameOverride ?? automaticOutputFilenameBase(gpMetadata.name, gpMetadata.artist);
+  const filename = outputFilename(gpMetadata.name, gpMetadata.artist, outputFilenameOverride);
+  const filenameError = outputFilenameOverride !== null && filename === null;
 
   async function doWrite(dir: string, filename: string) {
     setPendingSave(null);
@@ -125,6 +130,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   }
 
   async function handleSave() {
+    if (filename === null || !isMetadataValid(gpMetadata)) return;
     setSaveError(null);
     let dir = saveDir.trim();
     if (dir === '') {
@@ -137,7 +143,6 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       // must not block this save (the value is retained in-memory).
       void setOutputDir(chosen).catch(() => {});
     }
-    const filename = `${sanitizeFilename(gpMetadata.name)}.sng`;
     try {
       if (await window.gp2sng.pathExists(dir, filename)) {
         setPendingSave({ dir, filename });
@@ -149,8 +154,6 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
     }
   }
 
-  const filenamePreview = `${sanitizeFilename(gpMetadata.name)}.sng`;
-
   return (
     <div className="finalize">
       <h1 className="view-title">Finalize</h1>
@@ -159,6 +162,41 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       <MetadataForm metadata={gpMetadata} errors={errors} onChange={setMetadata} />
 
       <section className="save-section">
+        <div className="save-section__dir">
+          <label className="settings-label" htmlFor="output-filename">
+            File name
+          </label>
+          <div className="save-section__filename-field">
+            <div className="save-section__filename-controls">
+              <input
+                id="output-filename"
+                className={`text-input${filenameError ? ' text-input--invalid' : ''}`}
+                value={filenameBase}
+                aria-invalid={filenameError}
+                aria-describedby={filenameError ? 'output-filename-error' : 'output-filename-hint'}
+                onChange={(e) => setOutputFilenameOverride(withoutSngExtension(e.target.value))}
+              />
+              <span className="save-section__extension">.sng</span>
+              <button
+                type="button"
+                className="btn"
+                disabled={outputFilenameOverride === null}
+                onClick={() => setOutputFilenameOverride(null)}
+              >
+                Reset
+              </button>
+            </div>
+            {filenameError ? (
+              <span id="output-filename-error" className="metadata-field__error">
+                File name is required
+              </span>
+            ) : (
+              <span id="output-filename-hint" className="save-section__hint">
+                .sng is added automatically. Changing this does not change song metadata.
+              </span>
+            )}
+          </div>
+        </div>
         <div className="save-section__dir">
           <div className="settings-label">Saving to</div>
           <div className="settings-dir">
@@ -189,7 +227,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
             <div
               className={`save-section__filename${saved ? ' save-section__filename--success' : ''}`}
             >
-              {saved ? 'Success!' : filenamePreview}
+              {saved ? 'Success!' : (filename ?? 'Enter a valid file name')}
             </div>
             {saved ? (
               <button type="button" className="btn btn--primary" onClick={() => reset()}>
@@ -200,7 +238,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 type="button"
                 className="btn btn--affirmative"
                 onClick={handleSave}
-                disabled={!isMetadataValid(gpMetadata) || saving}
+                disabled={!isMetadataValid(gpMetadata) || filename === null || saving}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
