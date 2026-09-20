@@ -150,6 +150,21 @@ describe('wizardStore', () => {
     expect(s.selectedTrackId).toBeNull();
   });
 
+  test('waveform visibility defaults on, survives Preview navigation, and resets', () => {
+    expect(useWizardStore.getState().showWaveform).toBe(true);
+    useWizardStore.getState().setShowWaveform(false);
+    expect(useWizardStore.getState().showWaveform).toBe(false);
+    useWizardStore.getState().goToStep('preview');
+    useWizardStore.getState().goNext();
+    useWizardStore.getState().goBack();
+    expect(useWizardStore.getState().showWaveform).toBe(false);
+    useWizardStore.getState().setShowWaveform(true);
+    expect(useWizardStore.getState().showWaveform).toBe(true);
+    useWizardStore.getState().setShowWaveform(false);
+    useWizardStore.getState().reset();
+    expect(useWizardStore.getState().showWaveform).toBe(true);
+  });
+
   test('setSessionMap invalidates the prior conversion (clears chart + warnings)', () => {
     const chart = {
       resolution: 480,

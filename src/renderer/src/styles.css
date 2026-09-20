@@ -1121,6 +1121,23 @@ body {
   width: 96px;
 }
 
+.transport__offset-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.transport__offset-controls .btn {
+  padding: 4px 6px;
+}
+
+.transport__offset-controls .text-input {
+  flex: 1 1 64px;
+  min-width: 64px;
+  width: 64px;
+}
+
 /* Metadata form */
 .metadata-form {
   display: flex;
