@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ParsedGpScore, YargChart } from '../../../shared/types/index';
 import { analyzeTempo, type TempoAnalysisResult } from '../audio/tempoAnalysis';
+// TEMPORARY QA DIAGNOSTICS. Remove after real-audio tempo analysis calibration.
+import { logTempoAnalysisDiagnostics } from '../audio/tempoAnalysisDiagnostics';
 import { openingChartBpm, originalOpeningBpm } from '../state/tempoCorrection';
 import {
   formatSuggestedOffset,
@@ -118,6 +120,7 @@ export function TempoSection({
             audioBuffer,
             audioPaddingMs,
             score,
+            import.meta.env.DEV ? logTempoAnalysisDiagnostics : undefined,
           ),
         );
       } catch {
