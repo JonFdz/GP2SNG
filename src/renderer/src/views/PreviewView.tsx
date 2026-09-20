@@ -709,7 +709,7 @@ export function PreviewView() {
           <div className="transport__field">
             <label htmlFor="audio-offset">
               Audio offset (ms){' '}
-              <HelpIcon text="Offset the audio to sync with the chart as needed. It is recommended to use the metronome as a guide rather than the visuals. This will affect the output .sng file" />
+              <HelpIcon text="Offset the audio to sync it with the chart. Use the waveform and metronome as guides. This affects the output .sng file." />
             </label>
             <div className="transport__offset-controls">
               <button
@@ -807,7 +807,7 @@ export function PreviewView() {
           </button>
 
           <p className="transport__note">
-            Adjust the audio offset until the song audio is synced with the metronome.
+            Adjust the audio offset until the song audio is synced with the waveform and metronome.
           </p>
 
           <label className="transport__field">
