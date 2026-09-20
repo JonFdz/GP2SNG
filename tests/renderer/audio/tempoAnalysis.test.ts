@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { previewAudioOffsetSeconds } from '../../../src/renderer/src/audio/exportAudio';
 import {
   analyzeTempo,
-  authoredTempoDiagnostic,
+  authoredTempoPoints,
   type PcmAudio,
 } from '../../../src/renderer/src/audio/tempoAnalysis';
 import { computeAudioStart } from '../../../src/renderer/src/playback/scheduler';
@@ -118,6 +118,34 @@ function chartWithTenSecondAttack(): YargChart {
   };
 }
 
+function boundarySensitiveChart(bpm: number): YargChart {
+  const c = chart(bpm);
+  // One strong attack changes 18-second membership between 145 and 144 BPM.
+  // The rest of the song has useful cymbal attacks, so the old whole-song
+  // strong-only switch discarded its evidence at 144 BPM.
+  const strongBeats = [0, 1, 2].flatMap((window) =>
+    Array.from({ length: 9 }, (_, i) => window * 43.5 + 3 + i * 4),
+  );
+  strongBeats.push(...Array.from({ length: 8 }, (_, i) => 3 * 43.5 + 3 + i * 4), 173.8);
+  return {
+    ...c,
+    notes: [
+      ...strongBeats.map((beat) => ({
+        tick: c.leadInTicks + Math.round(beat * 480),
+        note: 'red' as const,
+        dynamic: 'neutral' as const,
+        midi: 38,
+      })),
+      ...Array.from({ length: 120 }, (_, i) => ({
+        tick: c.leadInTicks + Math.round((i * 3 + (i % 7) * 0.2) * 480),
+        note: 'yellowCymbal' as const,
+        dynamic: 'neutral' as const,
+        midi: 42,
+      })),
+    ],
+  };
+}
+
 describe('GP-prior tempo analysis', () => {
   test('exact alignment', () => {
     const c = chart();
@@ -138,6 +166,26 @@ describe('GP-prior tempo analysis', () => {
     expect(result.kind).toBe('uniformTempoAdjustment');
     expect(71 * (result.scale ?? 0)).toBeCloseTo(71.5, 1);
     expect(result.confidence).toBe('High');
+  });
+
+  test('nearby GP tempos fit the same 147 BPM recording', () => {
+    const recording = recordedAtBpm(chart(147), 147, 0.21);
+    for (const gpBpm of [144, 145, 147, 150, 155]) {
+      const result = analyzeTempo(chart(gpBpm), 1, recording);
+      expect(result.kind, `GP ${gpBpm} BPM`).toBe(
+        gpBpm === 147 ? 'aligned' : 'uniformTempoAdjustment',
+      );
+      expect(gpBpm * (result.scale ?? 0), `GP ${gpBpm} BPM`).toBeCloseTo(147, 0);
+    }
+  });
+
+  test('attacks at regional boundaries do not create a 144 BPM coverage cliff', () => {
+    const recording = recordedAtBpm(boundarySensitiveChart(147), 147, 0.21);
+    for (const gpBpm of [144, 145]) {
+      const result = analyzeTempo(boundarySensitiveChart(gpBpm), 1, recording);
+      expect(result.kind, `GP ${gpBpm} BPM`).toBe('uniformTempoAdjustment');
+      expect(gpBpm * (result.scale ?? 0), `GP ${gpBpm} BPM`).toBeCloseTo(147, 0);
+    }
   });
 
   test('constant negative drift', () => {
@@ -283,6 +331,56 @@ describe('GP-prior tempo analysis', () => {
     expect(result.mismatch).toMatchObject({ fromBpm: 164, toBpm: 160, ramp: false });
   });
 
+  test('a small authored tempo error is attributed even when drift becomes clear later', () => {
+    const c = chart(164);
+    c.endTick = c.leadInTicks + 700 * 480;
+    c.notes = Array.from({ length: 700 }, (_, beat) => beat)
+      .filter((beat) => (beat < 192 || beat >= 320) && beat % 7 !== 4 && beat % 11 !== 9)
+      .map((beat) => ({
+        tick: c.leadInTicks + beat * 480 + (beat % 5 === 2 ? 120 : 0),
+        note: beat % 2 === 0 ? ('orange' as const) : ('red' as const),
+        dynamic: 'neutral' as const,
+        midi: 36,
+      }));
+    const eventTick = c.leadInTicks + 192 * 480;
+    c.tempoMap.push({ tick: eventTick, usPerQuarter: Math.round(60000000 / 162) });
+    const gp = score(164, [{ bar: 48, position: 0, bpm: 162, linear: false }]);
+    const eventTime =
+      tickToSeconds(eventTick, c.tempoMap, c.resolution) -
+      tickToSeconds(c.leadInTicks, c.tempoMap, c.resolution);
+    const firstPostGap = c.notes.find((note) => note.tick >= c.leadInTicks + 320 * 480);
+    expect(firstPostGap).toBeDefined();
+    const firstPostTime =
+      tickToSeconds(firstPostGap?.tick ?? 0, c.tempoMap, c.resolution) -
+      tickToSeconds(c.leadInTicks, c.tempoMap, c.resolution);
+    // Useful attacks resume well after the old one-window proximity radius.
+    expect(firstPostTime - eventTime).toBeGreaterThan(18);
+    const result = analyzeTempo(c, 1, recordedAtBpm(c, 164), 0, gp);
+    expect(result.kind).toBe('tempoMapMismatch');
+    expect(result.mismatch).toMatchObject({ bar: 49, fromBpm: 164, toBpm: 162 });
+  });
+
+  test('only the wrong authored change is attributed among multiple tempo events', () => {
+    const c = chart(164);
+    const correctTick = c.leadInTicks + 32 * 480;
+    const wrongTick = c.leadInTicks + 192 * 480;
+    c.tempoMap.push(
+      { tick: correctTick, usPerQuarter: Math.round(60000000 / 160) },
+      { tick: wrongTick, usPerQuarter: Math.round(60000000 / 158) },
+    );
+    const recordingChart = {
+      ...c,
+      tempoMap: c.tempoMap.slice(0, 2),
+    };
+    const gp = score(164, [
+      { bar: 8, position: 0, bpm: 160, linear: false },
+      { bar: 48, position: 0, bpm: 158, linear: false },
+    ]);
+    const result = analyzeTempo(c, 1, audioFor(recordingChart), 0, gp);
+    expect(result.kind).toBe('tempoMapMismatch');
+    expect(result.mismatch).toMatchObject({ bar: 49, fromBpm: 160, toBpm: 158 });
+  });
+
   test('inconsistent regional timing with a constant GP is inconclusive', () => {
     const c = chart();
     const shift = [0, 0.53, -0.31, 0.22, -0.58, 0.44, -0.16, 0.61, -0.39, 0.13];
@@ -310,19 +408,14 @@ describe('GP-prior tempo analysis', () => {
       { bar: 20, position: 0, bpm: 138, linear: true },
       { bar: 60, position: 0, bpm: 80, linear: false },
     ]);
-    const midpoint =
-      tickToSeconds(c.leadInTicks + 160 * 480, rampChart.tempoMap, 480) -
-      tickToSeconds(c.leadInTicks, rampChart.tempoMap, 480);
+    const authored = authoredTempoPoints(rampChart, gp);
     expect(rampChart.tempoMap.length).toBeGreaterThan(10);
-    expect(authoredTempoDiagnostic(rampChart, gp, midpoint)).toBeUndefined();
+    expect(authored.map((point) => point.bpm)).toEqual([138, 138, 80]);
+    expect(authored.map((point) => point.bar)).toEqual([1, 21, 61]);
     const endTime =
       tickToSeconds(endTick, rampChart.tempoMap, 480) -
       tickToSeconds(c.leadInTicks, rampChart.tempoMap, 480);
-    expect(authoredTempoDiagnostic(rampChart, gp, endTime)).toMatchObject({
-      fromBpm: 138,
-      toBpm: 80,
-      bar: 61,
-      ramp: true,
-    });
+    expect(authored[2].time).toBeCloseTo(endTime, 3);
+    expect(authored[1].linear).toBe(true);
   });
 });

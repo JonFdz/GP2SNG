@@ -695,6 +695,21 @@ export function PreviewView() {
           )}
         </section>
 
+        <TempoSection
+          chart={gpChart}
+          analysisNotes={displayed}
+          score={gpScore}
+          tempoScale={tempoScale}
+          audioBuffer={audioBuffer}
+          audioPaddingMs={audioPaddingMs}
+          audioOffsetMs={audioOffsetMs}
+          onApplyTempo={(scale) => {
+            if (scheduler.isPlaying) stopPlayback(scheduler.currentChartTime());
+            setTempoScale(scale);
+          }}
+          onApplyOffset={handleOffsetChange}
+        />
+
         <section className="transport">
           <div className="settings-label">Timing</div>
 
@@ -766,19 +781,6 @@ export function PreviewView() {
             />
           </label>
         </section>
-
-        <TempoSection
-          chart={gpChart}
-          score={gpScore}
-          tempoScale={tempoScale}
-          audioBuffer={audioBuffer}
-          audioPaddingMs={audioPaddingMs}
-          onApplyTempo={(scale) => {
-            if (scheduler.isPlaying) stopPlayback(scheduler.currentChartTime());
-            setTempoScale(scale);
-          }}
-          onApplyOffset={handleOffsetChange}
-        />
 
         {errors.length > 0 && (
           <section className="transport">

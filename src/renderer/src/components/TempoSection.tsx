@@ -2,23 +2,34 @@ import { useEffect, useRef, useState } from 'react';
 import type { ParsedGpScore, YargChart } from '../../../shared/types/index';
 import { analyzeTempo, type TempoAnalysisResult } from '../audio/tempoAnalysis';
 import { openingChartBpm, originalOpeningBpm } from '../state/tempoCorrection';
+import {
+  formatSuggestedOffset,
+  preserveAnalysisOnSourceChange,
+  suggestedOffsetApplied,
+  suggestedOffsetAvailable,
+  suggestedTempoApplied,
+} from './tempoAnalysisView';
 
 interface Props {
   chart: YargChart;
+  analysisNotes: YargChart['notes'];
   score: ParsedGpScore;
   tempoScale: number;
   audioBuffer: AudioBuffer | null;
   audioPaddingMs: number;
+  audioOffsetMs: number;
   onApplyTempo: (scale: number) => void;
   onApplyOffset: (ms: number) => void;
 }
 
 export function TempoSection({
   chart,
+  analysisNotes,
   score,
   tempoScale,
   audioBuffer,
   audioPaddingMs,
+  audioOffsetMs,
   onApplyTempo,
   onApplyOffset,
 }: Props) {
@@ -33,27 +44,42 @@ export function TempoSection({
   const [result, setResult] = useState<TempoAnalysisResult | null>(null);
   const [busy, setBusy] = useState(false);
   const analysisEpoch = useRef(0);
-  const analysisSource = useRef({ chart, audioBuffer });
+  const analysisSource = useRef({ chart, audioBuffer, analysisNotes });
+  const pendingSuggestedScale = useRef<number | null>(null);
 
   useEffect(() => setDraft(displayed.toFixed(2)), [displayed]);
   useEffect(() => {
-    if (
-      analysisSource.current.chart !== chart ||
-      analysisSource.current.audioBuffer !== audioBuffer
-    ) {
-      analysisSource.current = { chart, audioBuffer };
+    const chartChanged = analysisSource.current.chart !== chart;
+    const audioChanged = analysisSource.current.audioBuffer !== audioBuffer;
+    const notesChanged = analysisSource.current.analysisNotes !== analysisNotes;
+    if (chartChanged || audioChanged || notesChanged) {
+      const preserve = preserveAnalysisOnSourceChange(
+        result,
+        chartChanged,
+        audioChanged,
+        pendingSuggestedScale.current,
+        tempoScale,
+      );
+      analysisSource.current = { chart, audioBuffer, analysisNotes };
+      pendingSuggestedScale.current = null;
       analysisEpoch.current++;
-      setResult(null);
+      if (!preserve) setResult(null);
       setBusy(false);
     }
-  }, [audioBuffer, chart]);
+  }, [analysisNotes, audioBuffer, chart, result, tempoScale]);
 
-  function apply(scale: number) {
+  function apply(scale: number, fromSuggestion = false) {
     try {
+      const preserve = fromSuggestion && result !== null && suggestedTempoApplied(result, scale);
+      pendingSuggestedScale.current = preserve ? scale : null;
       onApplyTempo(scale);
       setError(null);
-      setResult(null);
+      if (!preserve) {
+        analysisEpoch.current++;
+        setResult(null);
+      }
     } catch (e) {
+      pendingSuggestedScale.current = null;
       setError(e instanceof Error ? e.message : 'Could not apply that tempo.');
     }
   }
@@ -69,6 +95,10 @@ export function TempoSection({
       );
       return;
     }
+    if (Math.abs(scale - tempoScale) <= 0.000001) {
+      setError(null);
+      return;
+    }
     apply(scale);
   }
 
@@ -81,7 +111,15 @@ export function TempoSection({
     window.setTimeout(() => {
       if (epoch !== analysisEpoch.current) return;
       try {
-        setResult(analyzeTempo(chart, tempoScale, audioBuffer, audioPaddingMs, score));
+        setResult(
+          analyzeTempo(
+            { ...chart, notes: analysisNotes },
+            tempoScale,
+            audioBuffer,
+            audioPaddingMs,
+            score,
+          ),
+        );
       } catch {
         setResult({ kind: 'inconclusive' });
       }
@@ -90,6 +128,9 @@ export function TempoSection({
   }
 
   const suggestedBpm = result?.scale === undefined ? null : gpBpm * result.scale;
+  const tempoApplied = result !== null && suggestedTempoApplied(result, tempoScale);
+  const offsetAvailable = result !== null && suggestedOffsetAvailable(result);
+  const offsetApplied = result !== null && suggestedOffsetApplied(result, audioOffsetMs);
   return (
     <section className="transport tempo-section">
       <div className="settings-label">Tempo</div>
@@ -174,8 +215,6 @@ export function TempoSection({
                 </dd>
                 <dt>Estimated drift before correction</dt>
                 <dd>{result.driftSecondsPerMinute?.toFixed(2)} s/min</dd>
-                <dt>Suggested audio offset</dt>
-                <dd>{result.offsetMs} ms</dd>
                 <dt>Confidence</dt>
                 <dd>{result.confidence}</dd>
               </dl>
@@ -183,23 +222,39 @@ export function TempoSection({
                 <p>Verify this adjustment in Preview before exporting.</p>
               )}
               <div className="tempo-section__actions">
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={() => apply(result.scale ?? 1)}
-                >
-                  Apply{' '}
-                  {multiple
-                    ? `${(result.scale * 100).toFixed(2)}%`
-                    : `${suggestedBpm?.toFixed(2)} BPM`}
-                </button>
-                {result.offsetMs !== undefined && (
+                {tempoApplied ? (
+                  <span>✓ Applied</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    onClick={() => apply(result.scale ?? 1, true)}
+                  >
+                    Apply{' '}
+                    {multiple
+                      ? `${(result.scale * 100).toFixed(2)}%`
+                      : `${suggestedBpm?.toFixed(2)} BPM`}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+          {offsetAvailable && result.offsetMs !== undefined && (
+            <>
+              <dl>
+                <dt>Suggested audio offset</dt>
+                <dd>{formatSuggestedOffset(result.offsetMs)}</dd>
+              </dl>
+              <div className="tempo-section__actions">
+                {offsetApplied ? (
+                  <span>✓ Applied</span>
+                ) : (
                   <button
                     type="button"
                     className="btn"
                     onClick={() => onApplyOffset(result.offsetMs ?? 0)}
                   >
-                    Apply {result.offsetMs} ms
+                    Apply {formatSuggestedOffset(result.offsetMs)}
                   </button>
                 )}
               </div>

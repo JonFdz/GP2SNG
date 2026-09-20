@@ -52,6 +52,8 @@ export const TEMPO_ANALYSIS_THRESHOLDS = {
   minRegionalScaleChange: 0.006,
   maxRegionalScaleSpread: 0.003,
   maxRegionalOffsetSpread: 0.25,
+  minAuthoredSideWindows: 2,
+  minAttributionStrengthRatio: 1.5,
 } as const;
 
 interface Event {
@@ -111,14 +113,14 @@ export function onsetEnvelope(audio: PcmAudio): Float32Array {
 
 function chartEvents(chart: YargChart): Event[] {
   const lead = tickToSeconds(chart.leadInTicks, chart.tempoMap, chart.resolution);
-  const duration = tickToSeconds(chart.endTick, chart.tempoMap, chart.resolution) - lead;
   const byTick = new Map<number, number>();
   for (const note of chart.notes) {
     if (note.tick < chart.leadInTicks) continue;
-    // Kick/snare are usually distinctive anchors. Toms get partial weight;
-    // cymbal-only subdivisions are a fallback when strong drums are too sparse.
+    // Keep every event in the fit so a small tempo change cannot switch the
+    // entire event set. Dense cymbal subdivisions carry less total influence
+    // than kick/snare anchors, but still support cymbal-only passages.
     const weight =
-      note.note === 'orange' || note.note === 'red' ? 1 : note.note.endsWith('Tom') ? 0.7 : 0.3;
+      note.note === 'orange' || note.note === 'red' ? 1 : note.note.endsWith('Tom') ? 0.7 : 0.1;
     byTick.set(note.tick, Math.max(byTick.get(note.tick) ?? 0, weight));
   }
   const events = [...byTick]
@@ -127,14 +129,18 @@ function chartEvents(chart: YargChart): Event[] {
       weight,
     }))
     .sort((a, b) => a.time - b.time);
-  const strong = events.filter((event) => event.weight >= 0.7);
-  const strongWindows = new Set(strong.map((event) => Math.floor(event.time / T.windowSeconds)));
-  // A dense cymbal pattern can otherwise outweigh even correctly aligned
-  // kicks/snares by sheer count. Retain cymbals for songs with sparse anchors.
-  return strong.length >= T.minEventsPerWindow * T.minAnalyzableWindows &&
-    strongWindows.size / Math.ceil(duration / T.windowSeconds) >= T.minCoverage
-    ? strong
-    : events;
+  return events;
+}
+
+// Half-overlapping full-length windows keep events near an 18-second boundary
+// represented on either side. Anchor the final window to the song end rather
+// than counting a short tail as a failed region when duration shifts slightly.
+function globalWindowStarts(duration: number): number[] {
+  const last = Math.max(0, duration - T.windowSeconds);
+  const starts: number[] = [];
+  for (let start = 0; start < last; start += T.windowSeconds / 2) starts.push(start);
+  starts.push(last);
+  return starts;
 }
 
 function at(envelope: Float32Array, time: number, secondsPerBucket: number): number {
@@ -341,16 +347,18 @@ function localWindowFits(
   return windows;
 }
 
+export interface AuthoredTempoPoint {
+  time: number;
+  bpm: number;
+  linear: boolean;
+  bar: number;
+}
+
 // Reconstruct only authored automation positions in played order. Chart tempoMap
 // also contains interpolated ramp steps, which must never be labeled as GP edits.
-export function authoredTempoDiagnostic(
-  chart: YargChart,
-  score: ParsedGpScore | undefined,
-  boundary: number,
-): TempoAnalysisResult['mismatch'] {
-  if (score === undefined) return undefined;
+export function authoredTempoPoints(chart: YargChart, score: ParsedGpScore): AuthoredTempoPoint[] {
   const lead = tickToSeconds(chart.leadInTicks, chart.tempoMap, chart.resolution);
-  const points: { time: number; bpm: number; linear: boolean; bar: number }[] = [];
+  const points: AuthoredTempoPoint[] = [];
   let barStart = chart.leadInTicks;
   for (const masterIndex of expandTimeline(score.masterBars)) {
     const master = score.masterBars[masterIndex];
@@ -369,24 +377,74 @@ export function authoredTempoDiagnostic(
     }
     barStart += span;
   }
-  let closest: TempoAnalysisResult['mismatch'];
-  let distance: number = T.windowSeconds;
+  return points;
+}
+
+function tempoChange(points: AuthoredTempoPoint[], index: number): TempoAnalysisResult['mismatch'] {
+  return {
+    bar: points[index].bar,
+    fromBpm: points[index - 1].bpm,
+    toBpm: points[index].bpm,
+    ramp: points[index - 1].linear,
+  };
+}
+
+// Local fits can reveal the new tempo relationship soon after an authored
+// change, even when cumulative drift becomes obvious much later. Compare up to
+// four reliable windows on each side, excluding windows that cross this or a
+// neighboring authored event. A unique, sustained scale shift earns a bar.
+function attributedTempoChange(
+  chart: YargChart,
+  score: ParsedGpScore | undefined,
+  windows: WindowFit[],
+): TempoAnalysisResult['mismatch'] {
+  if (score === undefined) return undefined;
+  const points = authoredTempoPoints(chart, score);
+  const candidates: { index: number; strength: number }[] = [];
   for (let i = 1; i < points.length; i++) {
-    const previous = points[i - 1];
     const point = points[i];
-    if (previous.bpm === point.bpm) continue;
-    const delta = Math.abs(point.time - boundary);
-    if (delta < distance) {
-      distance = delta;
-      closest = {
-        bar: point.bar,
-        fromBpm: previous.bpm,
-        toBpm: point.bpm,
-        ramp: previous.linear,
-      };
-    }
+    if (point.bpm === points[i - 1].bpm) continue;
+    const before = windows
+      .filter(
+        (w) =>
+          w.center + T.windowSeconds / 2 <= point.time &&
+          w.center - T.windowSeconds / 2 >= points[i - 1].time,
+      )
+      .slice(-4);
+    const after = windows
+      .filter(
+        (w) =>
+          w.center - T.windowSeconds / 2 >= point.time &&
+          (i + 1 === points.length || w.center + T.windowSeconds / 2 <= points[i + 1].time),
+      )
+      .slice(0, 4);
+    if (before.length < T.minAuthoredSideWindows || after.length < T.minAuthoredSideWindows)
+      continue;
+    if (
+      median(before.map((w) => w.score)) < T.minStructuralWindowScore ||
+      median(after.map((w) => w.score)) < T.minStructuralWindowScore
+    )
+      continue;
+    const first = median(before.map((w) => w.scale));
+    const second = median(after.map((w) => w.scale));
+    const firstSpread = median(before.map((w) => Math.abs(w.scale - first)));
+    const secondSpread = median(after.map((w) => Math.abs(w.scale - second)));
+    const change = Math.abs(second - first);
+    if (
+      change >= T.minRegionalScaleChange &&
+      firstSpread <= T.maxRegionalScaleSpread &&
+      secondSpread <= T.maxRegionalScaleSpread
+    )
+      candidates.push({ index: i, strength: change - firstSpread - secondSpread });
   }
-  return closest;
+  candidates.sort((a, b) => b.strength - a.strength);
+  if (
+    candidates.length === 0 ||
+    (candidates.length > 1 &&
+      candidates[0].strength < candidates[1].strength * T.minAttributionStrengthRatio)
+  )
+    return undefined;
+  return tempoChange(points, candidates[0].index);
 }
 
 export function analyzeTempo(
@@ -461,9 +519,10 @@ export function analyzeTempo(
   );
 
   const windows: WindowFit[] = [];
-  const totalWindows = Math.ceil(duration / T.windowSeconds);
-  for (let i = 0; i < totalWindows; i++) {
-    const start = i * T.windowSeconds;
+  const primaryWindows: WindowFit[] = [];
+  const starts = globalWindowStarts(duration);
+  const totalWindows = starts.length;
+  for (const [index, start] of starts.entries()) {
     const region = events.filter(
       (event) => event.time >= start && event.time < start + T.windowSeconds,
     );
@@ -478,8 +537,11 @@ export function analyzeTempo(
       0.02,
       secondsPerBucket,
     );
-    if (fit.score >= T.minWindowScore)
-      windows.push({ center: start + T.windowSeconds / 2, scale: best.scale, ...fit });
+    if (fit.score >= T.minWindowScore) {
+      const window = { center: start + T.windowSeconds / 2, scale: best.scale, ...fit };
+      windows.push(window);
+      if (index % 2 === 0) primaryWindows.push(window);
+    }
   }
   const enoughGlobal =
     windows.length >= T.minAnalyzableWindows && windows.length / totalWindows >= T.minCoverage;
@@ -498,12 +560,13 @@ export function analyzeTempo(
     driftSecondsPerMinute: 60 * Math.abs(1 - 1 / best.scale),
   };
   if (!enoughGlobal || !stable) {
-    const local = localWindowFits(events, envelope, padding, secondsPerBucket, totalWindows);
-    if (local.length / totalWindows < T.minCoverage) return inconclusive;
-    const boundary = regionalScaleBoundary(local) ?? structuralBoundary(windows);
+    const localWindowCount = Math.ceil(duration / T.windowSeconds);
+    const local = localWindowFits(events, envelope, padding, secondsPerBucket, localWindowCount);
+    if (local.length / localWindowCount < T.minCoverage) return inconclusive;
+    const boundary = regionalScaleBoundary(local) ?? structuralBoundary(primaryWindows);
     return boundary === null
       ? inconclusive
-      : { kind: 'tempoMapMismatch', mismatch: authoredTempoDiagnostic(original, score, boundary) };
+      : { kind: 'tempoMapMismatch', mismatch: attributedTempoChange(original, score, local) };
   }
   if (
     Math.abs(best.scale - 1) <= T.alignedDriftTolerance &&
