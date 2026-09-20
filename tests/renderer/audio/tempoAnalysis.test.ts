@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest';
+import { previewAudioOffsetSeconds } from '../../../src/renderer/src/audio/exportAudio';
 import {
   analyzeTempo,
   authoredTempoDiagnostic,
   type PcmAudio,
 } from '../../../src/renderer/src/audio/tempoAnalysis';
+import { computeAudioStart } from '../../../src/renderer/src/playback/scheduler';
 import { buildTempoMap, tickToSeconds } from '../../../src/shared/convert/timing';
 import type { GpTempoAutomation, ParsedGpScore, YargChart } from '../../../src/shared/types/index';
 
@@ -56,20 +58,29 @@ function chart(bpm = 120, structural = false): YargChart {
   };
 }
 
-function audioFor(chart: YargChart, scale = 1, offset = 0, constantBpm?: number): PcmAudio {
+// audioDelaySeconds follows Preview's Audio Offset sign: positive means each
+// recorded attack occurs later in the source file than its chart event.
+function audioFor(
+  chart: YargChart,
+  scale = 1,
+  audioDelaySeconds = 0,
+  constantBpm?: number,
+): PcmAudio {
   const songDuration =
     constantBpm === undefined
       ? tickToSeconds(chart.endTick, chart.tempoMap, chart.resolution) -
         tickToSeconds(chart.leadInTicks, chart.tempoMap, chart.resolution)
       : ((chart.endTick - chart.leadInTicks) / 480) * (60 / constantBpm);
-  const data = new Float32Array(Math.ceil((songDuration / scale + Math.abs(offset) + 20) * RATE));
+  const data = new Float32Array(
+    Math.ceil((songDuration / scale + Math.abs(audioDelaySeconds) + 20) * RATE),
+  );
   const lead = tickToSeconds(chart.leadInTicks, chart.tempoMap, chart.resolution);
   for (const note of chart.notes) {
     const songTime =
       constantBpm === undefined
         ? tickToSeconds(note.tick, chart.tempoMap, chart.resolution) - lead
         : ((note.tick - chart.leadInTicks) / 480) * (60 / constantBpm);
-    const start = Math.round((songTime / scale - offset) * RATE);
+    const start = Math.round((songTime / scale + audioDelaySeconds) * RATE);
     for (let j = 0; j < 10; j++)
       if (start + j >= 0 && start + j < data.length) data[start + j] = 0.8;
   }
@@ -89,11 +100,22 @@ function pulses(times: number[], duration: number): PcmAudio {
 
 // Musical source fixture: recording attacks are placed directly from their
 // quarter-note position and a separately specified recording BPM.
-function recordedAtBpm(c: YargChart, bpm: number, offsetSeconds = 0): PcmAudio {
+function recordedAtBpm(c: YargChart, bpm: number, audioDelaySeconds = 0): PcmAudio {
   const times = c.notes.map(
-    (note) => ((note.tick - c.leadInTicks) / c.resolution) * (60 / bpm) - offsetSeconds,
+    (note) => ((note.tick - c.leadInTicks) / c.resolution) * (60 / bpm) + audioDelaySeconds,
   );
   return pulses(times, Math.max(...times) + 20);
+}
+
+function chartWithTenSecondAttack(): YargChart {
+  const c = chart();
+  return {
+    ...c,
+    notes: [
+      ...c.notes,
+      { tick: c.leadInTicks + 20 * 480, note: 'red', dynamic: 'neutral', midi: 38 },
+    ],
+  };
 }
 
 describe('GP-prior tempo analysis', () => {
@@ -102,9 +124,9 @@ describe('GP-prior tempo analysis', () => {
     expect(analyzeTempo(c, 1, audioFor(c)).kind).toBe('aligned');
   });
 
-  test('constant positive drift', () => {
+  test('constant positive drift plus fixed audio delay', () => {
     const c = chart();
-    const result = analyzeTempo(c, 1, audioFor(c, 1.007, 0.21));
+    const result = analyzeTempo(c, 1, recordedAtBpm(c, 120.84, 0.21));
     expect(result.kind).toBe('uniformTempoAdjustment');
     expect(result.scale).toBeCloseTo(1.007, 3);
     expect(result.offsetMs).toBeCloseTo(210, -1);
@@ -154,6 +176,10 @@ describe('GP-prior tempo analysis', () => {
     expect(reopened.kind).toBe(plain.kind);
     expect(reopened.scale).toBeCloseTo(plain.scale ?? 0, 3);
     expect(reopened.offsetMs).toBeCloseTo(plain.offsetMs ?? 0, -1);
+    expect(plain.offsetMs).toBeCloseTo(210, -1);
+    const lead = tickToSeconds(c.leadInTicks, c.tempoMap, c.resolution);
+    const previewOffset = previewAudioOffsetSeconds(c, reopened.offsetMs ?? 0, 3380);
+    expect(computeAudioStart(lead + 10, previewOffset).sourceOffsetSeconds).toBeCloseTo(13.59, 1);
   });
 
   test('uniform drift survives deterministic jitter, missing attacks, and extra transients', () => {
@@ -197,11 +223,36 @@ describe('GP-prior tempo analysis', () => {
     expect(120 * (result.scale ?? 0)).toBeCloseTo(120.84, 0);
   });
 
-  test('constant offset alone is not tempo drift', () => {
-    const c = chart();
-    const result = analyzeTempo(c, 1, audioFor(c, 1, -0.43));
+  test('audio 430 ms later than a chart attack needs +430 ms, without tempo drift', () => {
+    const c = chartWithTenSecondAttack();
+    const chartTimes = c.notes.map((note) => ((note.tick - c.leadInTicks) / 480) * 0.5);
+    const audio = pulses(
+      chartTimes.map((time) => time + 0.43),
+      200,
+    );
+    const result = analyzeTempo(c, 1, audio);
     expect(result.kind).toBe('aligned');
-    expect(result.offsetMs).toBeCloseTo(-430, -1);
+    expect(result.offsetMs).toBeCloseTo(430, -1);
+    // The explicit ten-second chart event is heard at 10.430 s in the source.
+    const lead = tickToSeconds(c.leadInTicks, c.tempoMap, c.resolution);
+    const previewOffset = previewAudioOffsetSeconds(c, result.offsetMs ?? 0, 0);
+    expect(computeAudioStart(lead + 10, previewOffset).sourceOffsetSeconds).toBeCloseTo(10.43, 1);
+  });
+
+  test('audio 300 ms earlier than a chart attack needs -300 ms', () => {
+    const c = chartWithTenSecondAttack();
+    const chartTimes = c.notes.map((note) => ((note.tick - c.leadInTicks) / 480) * 0.5);
+    const audio = pulses(
+      chartTimes.map((time) => time - 0.3),
+      200,
+    );
+    const result = analyzeTempo(c, 1, audio);
+    expect(result.kind).toBe('aligned');
+    expect(Math.abs((result.offsetMs ?? 0) + 300)).toBeLessThanOrEqual(20);
+    // The explicit ten-second chart event is heard at 9.700 s in the source.
+    const lead = tickToSeconds(c.leadInTicks, c.tempoMap, c.resolution);
+    const previewOffset = previewAudioOffsetSeconds(c, result.offsetMs ?? 0, 0);
+    expect(computeAudioStart(lead + 10, previewOffset).sourceOffsetSeconds).toBeCloseTo(9.7, 1);
   });
 
   test('silence is inconclusive', () => {

@@ -13,7 +13,7 @@ export interface TempoAnalysisResult {
   kind: TempoAnalysisKind;
   confidence?: 'High' | 'Medium';
   scale?: number; // absolute relative to GP
-  offsetMs?: number; // existing SNG delay convention
+  offsetMs?: number; // Preview/SNG Audio Offset: positive reads audio later in the buffer
   driftSecondsPerMinute?: number;
   differencePercent?: number;
   mismatch?: { bar: number; fromBpm: number; toBpm: number; ramp: boolean };
@@ -156,8 +156,10 @@ function alignmentScore(
   let sum = 0;
   let weight = 0;
   for (const event of events) {
+    // event.time excludes the chart lead-in. Preview reads at chartTime plus
+    // Audio Offset, with any physical SNG silence already present in the PCM.
     sum +=
-      event.weight * at(envelope, event.time / scale - offset + paddingSeconds, secondsPerBucket);
+      event.weight * at(envelope, event.time / scale + offset + paddingSeconds, secondsPerBucket);
     weight += event.weight;
   }
   return weight > 0 ? sum / weight : 0;
