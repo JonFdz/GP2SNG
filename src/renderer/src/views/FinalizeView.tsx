@@ -173,7 +173,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 className={`text-input${filenameError ? ' text-input--invalid' : ''}`}
                 value={filenameBase}
                 aria-invalid={filenameError}
-                aria-describedby={filenameError ? 'output-filename-error' : 'output-filename-hint'}
+                aria-describedby={filenameError ? 'output-filename-error' : undefined}
                 onChange={(e) => setOutputFilenameOverride(withoutSngExtension(e.target.value))}
               />
               <span className="save-section__extension">.sng</span>
@@ -186,13 +186,9 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 Reset
               </button>
             </div>
-            {filenameError ? (
+            {filenameError && (
               <span id="output-filename-error" className="metadata-field__error">
                 File name is required
-              </span>
-            ) : (
-              <span id="output-filename-hint" className="save-section__hint">
-                .sng is added automatically. Changing this does not change song metadata.
               </span>
             )}
           </div>

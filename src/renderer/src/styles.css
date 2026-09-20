@@ -1203,8 +1203,7 @@ body {
   min-width: 0;
 }
 
-.save-section__extension,
-.save-section__hint {
+.save-section__extension {
   color: var(--text-muted);
   font-size: 13px;
 }
