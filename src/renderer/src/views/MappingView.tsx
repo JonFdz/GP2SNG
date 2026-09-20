@@ -34,7 +34,9 @@ export function MappingView() {
 
   const activeMap = sessionMap ?? globalMap;
   const displayNumbers = trackMidiNumbers(selectedTracks);
-  const overlaps = detectOverlaps(selectedTracks, activeMap);
+  const graceNoteSpacing =
+    sessionMap === null ? conversionSettings.graceNoteSpacing : sessionSettings.graceNoteSpacing;
+  const overlaps = detectOverlaps(selectedTracks, activeMap, graceNoteSpacing);
   const combinedOverlaps = combineOverlaps(overlaps);
 
   return (

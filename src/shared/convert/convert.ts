@@ -82,36 +82,51 @@ function resolveDynamic(
 export function detectOverlaps(
   tracks: readonly ParsedGpTrack[],
   map: MidiMap,
+  graceNoteSpacing: GraceNoteSpacing = DEFAULT_CONVERSION_SETTINGS.graceNoteSpacing,
 ): ConversionWarning[] {
   const warnings: ConversionWarning[] = [];
   const positions = new Map<string, { bar: number; positionFrac: Frac; midi: number[] }>();
+  const graceTicks = fracToTick(GRACE_SPACING_FRACTION[graceNoteSpacing], CHART_RESOLUTION);
   for (const track of tracks)
     track.bars.forEach((bar, barIdx) => {
       for (const voice of bar.voices) {
-        // Beat position within the bar (whole-note fraction), mirroring the played
-        // loop in convertToYargChart so the warning resolves to the exact beat tick,
-        // not the bar start. Grace beats carry no grid time and render just before
-        // the next primary beat, so they anchor to the current pos without advancing
-        // it — matching the flam placement there.
         let pos: Frac = [0, 1];
-        for (const beat of voice.beats) {
+        let graceRun: GpBeat[] = [];
+        const recordAt = (beat: GpBeat, tick: number, positionFrac: Frac) => {
           const hands = beat.notes.filter((n) => {
             const r = lookup(map, n.midi);
             return r !== null && r.note !== 'orange';
           });
-          if (hands.length > 0) {
-            const key = `${barIdx}:${pos[0]}/${pos[1]}`;
-            const group = positions.get(key);
-            if (group) group.midi.push(...hands.map((n) => n.midi));
-            else
-              positions.set(key, {
-                bar: barIdx + 1,
-                positionFrac: pos,
-                midi: hands.map((n) => n.midi),
-              });
+          if (hands.length === 0) return;
+          const key = `${barIdx}:${tick}`;
+          const group = positions.get(key);
+          if (group) group.midi.push(...hands.map((n) => n.midi));
+          else
+            positions.set(key, {
+              bar: barIdx + 1,
+              positionFrac,
+              midi: hands.map((n) => n.midi),
+            });
+        };
+        const flushGraces = (anchorTick: number) => {
+          const k = graceRun.length;
+          graceRun.forEach((beat, i) => {
+            const offset = (k - i) * graceTicks;
+            recordAt(beat, anchorTick - offset, addFrac(pos, [-offset, 4 * CHART_RESOLUTION]));
+          });
+          graceRun = [];
+        };
+        for (const beat of voice.beats) {
+          if (beat.isGrace) {
+            graceRun.push(beat);
+            continue;
           }
-          if (!beat.isGrace) pos = addFrac(pos, [beat.durationNum, beat.durationDen]);
+          const beatTick = fracToTick(pos, CHART_RESOLUTION);
+          flushGraces(beatTick);
+          recordAt(beat, beatTick, pos);
+          pos = addFrac(pos, [beat.durationNum, beat.durationDen]);
         }
+        flushGraces(fracToTick(pos, CHART_RESOLUTION));
       }
     });
   for (const { bar, positionFrac, midi } of positions.values()) {

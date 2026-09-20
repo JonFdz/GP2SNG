@@ -158,6 +158,10 @@ export function LoadView() {
               ))}
             </div>
 
+            {selectedTrackIds.length === 0 && (
+              <div className="error-banner">Select at least one track to continue.</div>
+            )}
+
             {noteless && (
               <div className="error-banner">
                 The selected tracks have no notes. Select a track that contains notes to continue.

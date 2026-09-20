@@ -676,6 +676,62 @@ describe('detectOverlaps — three hand notes', () => {
     expect(detectOverlaps([s.tracks[0]], DEFAULT_MIDI_MAP)).toHaveLength(0);
   });
 
+  it('does not count a grace snare with the following primary hi-hat and ride', () => {
+    const s = oneBarScore([
+      { notes: [{ midi: 38 }], grace: true },
+      { notes: [{ midi: 42 }, { midi: 51 }] },
+    ]);
+    expect(detectOverlaps(s.tracks, DEFAULT_MIDI_MAP)).toHaveLength(0);
+  });
+
+  it('finds hand notes from different tracks at the same effective grace tick', () => {
+    const s = withSecondTrack(
+      oneBarScore([{ notes: [{ midi: 38 }, { midi: 42 }], grace: true }, { notes: [] }]),
+      [{ notes: [{ midi: 51 }], grace: true }, { notes: [] }],
+    );
+    const warnings = detectOverlaps(s.tracks, DEFAULT_MIDI_MAP);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].context).toMatchObject({ midi: [38, 42, 51], positionFrac: [-1, 64] });
+  });
+
+  it('spaces consecutive graces in reading order', () => {
+    const s = withSecondTrack(
+      oneBarScore([
+        { notes: [], num: 1, den: 4 },
+        { notes: [{ midi: 38 }], grace: true },
+        { notes: [{ midi: 42 }], grace: true },
+        { notes: [] },
+      ]),
+      [
+        { notes: [], num: 1, den: 8 },
+        { notes: [], num: 1, den: 16 },
+        { notes: [], num: 1, den: 32 },
+        { notes: [{ midi: 51 }, { midi: 49 }] },
+      ],
+    );
+    const warnings = detectOverlaps(s.tracks, DEFAULT_MIDI_MAP);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].context).toMatchObject({ midi: [38, 51, 49], positionFrac: [7, 32] });
+  });
+
+  it('uses the selected grace spacing when comparing grace and primary positions', () => {
+    const s = withSecondTrack(
+      oneBarScore([
+        { notes: [], num: 1, den: 4 },
+        { notes: [{ midi: 38 }], grace: true },
+        { notes: [] },
+      ]),
+      [
+        { notes: [], num: 1, den: 8 },
+        { notes: [], num: 1, den: 16 },
+        { notes: [], num: 1, den: 32 },
+        { notes: [{ midi: 42 }, { midi: 51 }] },
+      ],
+    );
+    expect(detectOverlaps(s.tracks, DEFAULT_MIDI_MAP, '64th')).toHaveLength(0);
+    expect(detectOverlaps(s.tracks, DEFAULT_MIDI_MAP, '32nd')).toHaveLength(1);
+  });
+
   it('finds three hands across tracks at the same musical position', () => {
     const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 38 }, { midi: 42 }] }]), [
       { notes: [{ midi: 49 }] },
