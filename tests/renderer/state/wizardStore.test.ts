@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { outputFilename } from '../../../src/renderer/src/state/outputFilename';
 import { canAdvance, useWizardStore } from '../../../src/renderer/src/state/wizardStore';
 import { applyRemap } from '../../../src/shared/midi/index';
 import {
@@ -68,8 +69,9 @@ function blob(): SessionBlob {
   };
 }
 
-function restore(): void {
+function restore(sngFilePath = 'C:/songs/Song - Artist.sng'): void {
   useWizardStore.getState().restoreSession({
+    sngFilePath,
     gpFilePath: 'C:/songs/song.gp',
     gpFileBytes: GP_BYTES,
     score: score([track(3, true, 40)]),
@@ -209,6 +211,65 @@ describe('wizardStore', () => {
     useWizardStore.getState().setSessionMap(DEFAULT_MIDI_MAP);
     expect(useWizardStore.getState().chart).toBeNull();
     expect(useWizardStore.getState().warnings).toEqual([]);
+  });
+});
+
+describe('output filename override', () => {
+  function currentFilename(): string | null {
+    const { metadata, outputFilenameOverride } = useWizardStore.getState();
+    return outputFilename(metadata?.name ?? '', metadata?.artist ?? '', outputFilenameOverride);
+  }
+
+  test('defaults to automatic mode and follows metadata until customized', () => {
+    expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+    useWizardStore.getState().setMetadata({ name: 'Granite', artist: 'Sleep Token' });
+    expect(currentFilename()).toBe('Granite - Sleep Token.sng');
+    useWizardStore.getState().setMetadata({ artist: 'Sleep Token UK' });
+    expect(currentFilename()).toBe('Granite - Sleep Token UK.sng');
+  });
+
+  test('a custom override survives navigation and metadata edits until reset', () => {
+    useWizardStore.getState().setMetadata({ name: 'Granite', artist: 'Sleep Token' });
+    useWizardStore.getState().goToStep('finalize');
+    useWizardStore.getState().setOutputFilenameOverride('Sleep Token - Granite - Custom Chart');
+    useWizardStore.getState().goBack();
+    useWizardStore.getState().setMetadata({ artist: 'Sleep Token UK' });
+    useWizardStore.getState().goNext();
+    expect(useWizardStore.getState().step).toBe('finalize');
+    expect(useWizardStore.getState().outputFilenameOverride).toBe(
+      'Sleep Token - Granite - Custom Chart',
+    );
+    expect(currentFilename()).toBe('Sleep Token - Granite - Custom Chart.sng');
+    useWizardStore.getState().setOutputFilenameOverride(null);
+    expect(currentFilename()).toBe('Granite - Sleep Token UK.sng');
+  });
+
+  test('loading another score clears the override', () => {
+    useWizardStore.getState().setOutputFilenameOverride('Custom');
+    useWizardStore.getState().loadScore('new.gp', GP_BYTES, score([track(0, true, 5)]));
+    expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+  });
+
+  test('full reset clears the override', () => {
+    useWizardStore.getState().setOutputFilenameOverride('Custom');
+    useWizardStore.getState().reset();
+    expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+  });
+
+  test('restored sessions start in automatic mode without a blob field', () => {
+    useWizardStore.getState().setOutputFilenameOverride('Previous custom name');
+    restore();
+    expect(useWizardStore.getState().outputFilenameOverride).toBeNull();
+    useWizardStore.getState().setMetadata({ artist: 'New Artist' });
+    expect(currentFilename()).toBe('Song - New Artist.sng');
+    expect(blob()).not.toHaveProperty('outputFilenameOverride');
+  });
+
+  test('restoring a renamed .sng uses its filename as the override', () => {
+    restore('C:/songs/My Favourite Chart.sng');
+    expect(useWizardStore.getState().outputFilenameOverride).toBe('My Favourite Chart');
+    useWizardStore.getState().setMetadata({ artist: 'New Artist' });
+    expect(currentFilename()).toBe('My Favourite Chart.sng');
   });
 });
 

@@ -22,6 +22,7 @@ import {
   YARG_NOTE_IDS,
 } from '../../../shared/types/index';
 import { detectDrumTracks } from './detectDrumTracks';
+import { reopenedOutputFilenameOverride } from './outputFilename';
 
 // Default highway scroll speed in px/s (docs/DESIGN.md → Highway scroll speed):
 // a view-only preference, not persisted.
@@ -132,6 +133,7 @@ export interface WizardState {
 
   // Preview-scoped state (docs/DESIGN.md → Chart preview → Data-model impact).
   metadata: SongMetadata | null; // editable form values, seeded from the score
+  outputFilenameOverride: string | null; // null follows song name + artist; never serialized
   audioBuffer: AudioBuffer | null; // decoded for playback
   audioBytes: Uint8Array | null; // original source bytes, bundled by the writer
   audioOffsetMs: number; // the SNG `delay` value
@@ -159,6 +161,7 @@ export interface WizardState {
   // global MIDI map?" prompt must not fire merely because the original session had
   // diverged from the global map.
   restoreSession: (args: {
+    sngFilePath: string;
     gpFilePath: string;
     gpFileBytes: Uint8Array;
     score: ParsedGpScore;
@@ -175,6 +178,7 @@ export interface WizardState {
   setSessionSettings: (next: ConversionSettings) => void;
   setConversion: (chart: YargChart, warnings: ConversionWarning[]) => void;
   setMetadata: (patch: Partial<SongMetadata>) => void;
+  setOutputFilenameOverride: (value: string | null) => void;
   setAudio: (audio: { buffer: AudioBuffer; bytes: Uint8Array; paddingMs: number }) => void;
   clearAudio: () => void;
   setAlbumArt: (albumArt: AlbumArt) => void;
@@ -219,6 +223,7 @@ const INITIAL = {
   chart: null,
   warnings: [] as ConversionWarning[],
   metadata: null,
+  outputFilenameOverride: null,
   audioBuffer: null,
   audioBytes: null,
   audioOffsetMs: 0,
@@ -268,7 +273,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       score,
       selectedTrackIds: detectDrumTracks(score.tracks),
     }),
-  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes, albumArt }) => {
+  restoreSession: ({ sngFilePath, gpFilePath, gpFileBytes, score, blob, audioBytes, albumArt }) => {
     if (blob.selectedTrackIds.some((id) => !score.tracks.some((track) => track.id === id))) {
       throw new SessionRestoreError(
         "This .sng's GP2SNG session data is corrupt. Re-convert it from the original Guitar Pro file.",
@@ -291,6 +296,11 @@ export const useWizardStore = create<WizardState>((set) => ({
       chart: blob.chart,
       warnings: blob.warnings,
       metadata: blob.metadata,
+      outputFilenameOverride: reopenedOutputFilenameOverride(
+        sngFilePath,
+        blob.metadata.name,
+        blob.metadata.artist,
+      ),
       // The AudioContext lives on the Preview step, so the buffer is decoded there
       // from these bytes rather than here.
       audioBytes,
@@ -364,6 +374,7 @@ export const useWizardStore = create<WizardState>((set) => ({
   setConversion: (chart, warnings) => set({ chart, warnings }),
   setMetadata: (patch) =>
     set((s) => ({ metadata: { ...(s.metadata ?? BLANK_METADATA), ...patch } })),
+  setOutputFilenameOverride: (value) => set({ outputFilenameOverride: value }),
   setAudio: ({ buffer, bytes, paddingMs }) =>
     set({ audioBuffer: buffer, audioBytes: bytes, audioPaddingMs: paddingMs }),
   clearAudio: () => set({ audioBuffer: null, audioBytes: null, audioPaddingMs: 0 }),
