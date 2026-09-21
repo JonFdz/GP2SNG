@@ -135,6 +135,7 @@ export interface WizardState {
   albumArt: AlbumArt | null; // opaque image bytes, stored as its own SNG member
   viewTime: number; // seconds from chart start currently at the hit line
   pixelsPerSecond: number; // highway scroll speed (view-only preference)
+  showWaveform: boolean; // Preview-only visualization preference
   previewVolume: number; // preview audio gain, 1 = 100% (view-only preference)
   playbackRate: number; // preview playback speed, 1 = 100% (view-only preference)
   metronomeOn: boolean; // preview metronome toggle (view-only preference)
@@ -177,6 +178,7 @@ export interface WizardState {
   setAudioOffsetMs: (ms: number) => void;
   setViewTime: (t: number) => void;
   setPixelsPerSecond: (pps: number) => void;
+  setShowWaveform: (show: boolean) => void;
   setPreviewVolume: (v: number) => void;
   setPlaybackRate: (r: number) => void;
   setMetronomeOn: (on: boolean) => void;
@@ -220,6 +222,7 @@ const INITIAL = {
   albumArt: null,
   viewTime: 0,
   pixelsPerSecond: DEFAULT_PIXELS_PER_SECOND,
+  showWaveform: true,
   previewVolume: 1,
   playbackRate: 1,
   metronomeOn: false,
@@ -353,6 +356,7 @@ export const useWizardStore = create<WizardState>((set) => ({
   setAudioOffsetMs: (ms) => set({ audioOffsetMs: ms }),
   setViewTime: (t) => set({ viewTime: t }),
   setPixelsPerSecond: (pps) => set({ pixelsPerSecond: pps }),
+  setShowWaveform: (show) => set({ showWaveform: show }),
   setPreviewVolume: (v) => set({ previewVolume: v }),
   setPlaybackRate: (r) => set({ playbackRate: r }),
   setMetronomeOn: (on) => set({ metronomeOn: on }),
