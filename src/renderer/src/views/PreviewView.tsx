@@ -16,6 +16,7 @@ import {
 } from '../../../shared/midi/index';
 import type { YargNote, YargNoteId } from '../../../shared/types/index';
 import { previewAudioOffsetSeconds } from '../audio/index';
+import { buildWaveformOverview } from '../audio/waveform';
 import { ActionLog } from '../components/ActionLog';
 import { AnchoredTooltip, anchorBottomRight } from '../components/AnchoredTooltip';
 import { ChartCanvas } from '../components/ChartCanvas';
@@ -68,7 +69,7 @@ function describeError(error: ChartError): string {
 export function PreviewView() {
   const score = useWizardStore((s) => s.score);
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
-  const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
+  const selectedTrackIds = useWizardStore((s) => s.selectedTrackIds);
   const chart = useWizardStore((s) => s.chart);
   const tempoScale = useWizardStore((s) => s.tempoScale);
   const setTempoScale = useWizardStore((s) => s.setTempoScale);
@@ -79,6 +80,7 @@ export function PreviewView() {
   const audioPaddingMs = useWizardStore((s) => s.audioPaddingMs);
   const viewTime = useWizardStore((s) => s.viewTime);
   const pixelsPerSecond = useWizardStore((s) => s.pixelsPerSecond);
+  const showWaveform = useWizardStore((s) => s.showWaveform);
   const overrides = useWizardStore((s) => s.overrides);
   const deletions = useWizardStore((s) => s.deletions);
   const previewRemaps = useWizardStore((s) => s.previewRemaps);
@@ -93,6 +95,7 @@ export function PreviewView() {
   const setAudioOffsetMs = useWizardStore((s) => s.setAudioOffsetMs);
   const setViewTime = useWizardStore((s) => s.setViewTime);
   const setPixelsPerSecond = useWizardStore((s) => s.setPixelsPerSecond);
+  const setShowWaveform = useWizardStore((s) => s.setShowWaveform);
   const previewVolume = useWizardStore((s) => s.previewVolume);
   const setPreviewVolume = useWizardStore((s) => s.setPreviewVolume);
   const playbackRate = useWizardStore((s) => s.playbackRate);
@@ -132,6 +135,12 @@ export function PreviewView() {
   const [error, setError] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
+  const waveform = useMemo(
+    () => (audioBuffer === null ? null : buildWaveformOverview(audioBuffer)),
+    [audioBuffer],
+  );
+  const offsetSeconds =
+    chart === null ? 0 : previewAudioOffsetSeconds(chart, audioOffsetMs, audioPaddingMs);
 
   // Dispose the AudioContext when leaving the step.
   useEffect(() => () => schedulerRef.current?.dispose(), []);
@@ -303,7 +312,7 @@ export function PreviewView() {
   );
 
   // The wizard only routes here after a successful conversion.
-  if (chart === null || score === null || selectedTrackId === null) {
+  if (chart === null || score === null || selectedTrackIds.length === 0) {
     return null;
   }
   // Non-null locals so the handler closures keep the narrowing (TS drops
@@ -311,7 +320,7 @@ export function PreviewView() {
   const scheduler = schedulerRef.current;
   const gpScore = score;
   const gpChart = chart;
-  const gpTrackId = selectedTrackId;
+  const gpTrackIds = selectedTrackIds;
 
   function stopPlayback(at: number) {
     scheduler.stop();
@@ -324,7 +333,7 @@ export function PreviewView() {
       stopPlayback(scheduler.currentChartTime());
       return;
     }
-    scheduler.play(viewTime, previewAudioOffsetSeconds(gpChart, audioOffsetMs, audioPaddingMs));
+    scheduler.play(viewTime, offsetSeconds);
     setIsPlaying(true);
   }
 
@@ -451,7 +460,7 @@ export function PreviewView() {
     const from: YargNoteId | null = cur ? (cur.accented ? `${cur.note}Accented` : cur.note) : null;
     const nextMap = applyRemap(currentMap, midi, target);
     try {
-      const result = convertToYargChart(gpScore, gpTrackId, nextMap, sessionSettings);
+      const result = convertToYargChart(gpScore, gpTrackIds, nextMap, sessionSettings);
       // Commit the map edit only after a successful re-convert (recordPreviewRemap
       // sets the session map); a failed reassign must not wipe the current chart.
       recordPreviewRemap({ midi, from, to: target, nextMap });
@@ -482,7 +491,7 @@ export function PreviewView() {
     if (entry === undefined) return;
     const revertMap = applyRemap(sessionMap ?? globalMap, midi, entry.from);
     try {
-      const result = convertToYargChart(gpScore, gpTrackId, revertMap, sessionSettings);
+      const result = convertToYargChart(gpScore, gpTrackIds, revertMap, sessionSettings);
       removePreviewRemap(midi, revertMap);
       setConversion(result.chart, result.warnings);
     } catch (err) {
@@ -511,6 +520,8 @@ export function PreviewView() {
             errorLines={errorDots}
             barNumbers={barNumbers}
             leadInBars={leadInBars}
+            waveform={showWaveform ? waveform : null}
+            audioOffsetSeconds={offsetSeconds}
             viewTime={viewTime}
             isPlaying={isPlaying}
             pixelsPerSecond={pixelsPerSecond}
@@ -713,18 +724,66 @@ export function PreviewView() {
         <section className="transport">
           <div className="settings-label">Timing</div>
 
-          <label className="transport__field transport__field--inline">
-            <span>
+          <div className="transport__field">
+            <label htmlFor="audio-offset">
               Audio offset (ms){' '}
-              <HelpIcon text="Offset the audio to sync with the chart as needed. It is recommended to use the metronome as a guide rather than the visuals. This will affect the output .sng file" />
-            </span>
+              <HelpIcon text="Offset the audio to sync it with the chart. Use the waveform and metronome as guides. This affects the output .sng file." />
+            </label>
+            <div className="transport__offset-controls">
+              <button
+                type="button"
+                className="btn btn--small"
+                onClick={() => handleOffsetChange(audioOffsetMs - 100)}
+              >
+                -100
+              </button>
+              <button
+                type="button"
+                className="btn btn--small"
+                onClick={() => handleOffsetChange(audioOffsetMs - 10)}
+              >
+                -10
+              </button>
+              <input
+                id="audio-offset"
+                className="text-input"
+                type="number"
+                step={1}
+                value={String(audioOffsetMs)}
+                onChange={(e) => handleOffsetChange(Math.round(Number(e.target.value) || 0))}
+              />
+              <button
+                type="button"
+                className="btn btn--small"
+                onClick={() => handleOffsetChange(audioOffsetMs + 10)}
+              >
+                +10
+              </button>
+              <button
+                type="button"
+                className="btn btn--small"
+                onClick={() => handleOffsetChange(audioOffsetMs + 100)}
+              >
+                +100
+              </button>
+              <button
+                type="button"
+                className="btn btn--small"
+                onClick={() => handleOffsetChange(0)}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <label className="checkbox">
             <input
-              className="text-input"
-              type="number"
-              step={1}
-              value={String(audioOffsetMs)}
-              onChange={(e) => handleOffsetChange(Math.round(Number(e.target.value) || 0))}
+              type="checkbox"
+              checked={showWaveform}
+              disabled={audioBuffer === null}
+              onChange={(e) => setShowWaveform(e.target.checked)}
             />
+            Show waveform
           </label>
 
           <label className="transport__field">
@@ -766,7 +825,7 @@ export function PreviewView() {
           </button>
 
           <p className="transport__note">
-            Adjust the audio offset until the song audio is synced with the metronome.
+            Adjust the audio offset until the song audio is synced with the waveform and metronome.
           </p>
 
           <label className="transport__field">

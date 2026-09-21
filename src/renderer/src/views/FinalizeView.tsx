@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { tickToSeconds } from '../../../shared/convert/index';
 import { writeSng } from '../../../shared/sng/index';
@@ -7,15 +7,14 @@ import { resolveFinalizeAudio } from '../audio/index';
 import { MetadataForm } from '../components/MetadataForm';
 import { displayedNotes } from '../playback/overrides';
 import { defaultMetadata, isMetadataValid, metadataErrors } from '../state/metadata';
+import {
+  automaticOutputFilenameBase,
+  outputFilename,
+  withoutSngExtension,
+} from '../state/outputFilename';
 import { buildSessionBlob } from '../state/sessionBlob';
 import { useSettingsStore } from '../state/settingsStore';
 import { useWizardStore } from '../state/wizardStore';
-
-// A filename safe for Windows/POSIX (docs/DESIGN.md → UI top-level structure → Save).
-function sanitizeFilename(name: string): string {
-  const cleaned = name.replace(/[<>:"/\\|?*]/g, '_').trim();
-  return cleaned === '' ? 'song' : cleaned;
-}
 
 // The Finalize step: the editable song-metadata form and the save destination,
 // split out of Preview so the chart-review surface stays focused. Save writes the
@@ -29,15 +28,20 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const overrides = useWizardStore((s) => s.overrides);
   const deletions = useWizardStore((s) => s.deletions);
   const metadata = useWizardStore((s) => s.metadata);
+  const outputFilenameOverride = useWizardStore((s) => s.outputFilenameOverride);
   const audioBuffer = useWizardStore((s) => s.audioBuffer);
   const audioBytes = useWizardStore((s) => s.audioBytes);
   const audioOffsetMs = useWizardStore((s) => s.audioOffsetMs);
   const audioPaddingMs = useWizardStore((s) => s.audioPaddingMs);
+  const albumArt = useWizardStore((s) => s.albumArt);
   const setMetadata = useWizardStore((s) => s.setMetadata);
+  const setOutputFilenameOverride = useWizardStore((s) => s.setOutputFilenameOverride);
   const reset = useWizardStore((s) => s.reset);
+  const setAlbumArt = useWizardStore((s) => s.setAlbumArt);
+  const clearAlbumArt = useWizardStore((s) => s.clearAlbumArt);
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
   const gpFileBytes = useWizardStore((s) => s.gpFileBytes);
-  const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
+  const selectedTrackIds = useWizardStore((s) => s.selectedTrackIds);
   const sessionMap = useWizardStore((s) => s.sessionMap);
   const sessionSettings = useWizardStore((s) => s.sessionSettings);
   const warnings = useWizardStore((s) => s.warnings);
@@ -51,6 +55,10 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [albumArtError, setAlbumArtError] = useState<string | null>(null);
+  const [albumArtLoading, setAlbumArtLoading] = useState(false);
+  const [albumArtUrl, setAlbumArtUrl] = useState<string | null>(null);
+  const albumArtInputRef = useRef<HTMLInputElement>(null);
 
   // Seed the metadata form from the parsed score on first entry.
   useEffect(() => {
@@ -59,6 +67,20 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
 
   // Keep the "Saving to" field aligned with Settings until the user overrides it.
   useEffect(() => setSaveDir(outputDir ?? ''), [outputDir]);
+
+  useEffect(() => {
+    if (albumArt === null) {
+      setAlbumArtUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([albumArt.bytes], {
+        type: albumArt.extension === 'jpg' ? 'image/jpeg' : 'image/png',
+      }),
+    );
+    setAlbumArtUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [albumArt]);
 
   const displayed = useMemo(
     () => (chart === null ? [] : displayedNotes(chart.notes, overrides, deletions)),
@@ -71,7 +93,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
     metadata === null ||
     gpFileBytes === null ||
     sessionMap === null ||
-    selectedTrackId === null ||
+    selectedTrackIds.length === 0 ||
     gpFilePath === null
   ) {
     return null;
@@ -80,9 +102,13 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const gpMetadata = metadata;
   const gpBytes = gpFileBytes;
   const map = sessionMap;
-  const trackId = selectedTrackId;
+  const trackIds = selectedTrackIds;
   const filePath = gpFilePath;
   const errors = metadataErrors(gpMetadata);
+  const filenameBase =
+    outputFilenameOverride ?? automaticOutputFilenameBase(gpMetadata.name, gpMetadata.artist);
+  const filename = outputFilename(gpMetadata.name, gpMetadata.artist, outputFilenameOverride);
+  const filenameError = outputFilenameOverride !== null && filename === null;
 
   async function doWrite(dir: string, filename: string) {
     setPendingSave(null);
@@ -101,7 +127,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       const session = buildSessionBlob({
         gpFilePath: filePath,
         gpBytes,
-        selectedTrackId: trackId,
+        selectedTrackIds: trackIds,
         sessionMap: map,
         sessionSettings,
         chart: gpChart,
@@ -113,7 +139,14 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
         audioOffsetMs,
         audioPaddingMs: paddingMs,
       });
-      const bytes = writeSng(displayedChart, gpMetadata, audio, audioOffsetMs, session);
+      const bytes = writeSng(
+        displayedChart,
+        gpMetadata,
+        audio,
+        audioOffsetMs,
+        session,
+        albumArt ?? undefined,
+      );
       await window.gp2sng.writeSng(dir, filename, bytes);
       setSaved(true);
       setSaveError(null);
@@ -125,6 +158,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   }
 
   async function handleSave() {
+    if (filename === null || !isMetadataValid(gpMetadata)) return;
     setSaveError(null);
     let dir = saveDir.trim();
     if (dir === '') {
@@ -137,7 +171,6 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       // must not block this save (the value is retained in-memory).
       void setOutputDir(chosen).catch(() => {});
     }
-    const filename = `${sanitizeFilename(gpMetadata.name)}.sng`;
     try {
       if (await window.gp2sng.pathExists(dir, filename)) {
         setPendingSave({ dir, filename });
@@ -149,7 +182,26 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
     }
   }
 
-  const filenamePreview = `${sanitizeFilename(gpMetadata.name)}.sng`;
+  async function handleAlbumArtFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow selecting the same file after replacing or removing it
+    if (file === undefined) return;
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (extension !== 'png' && extension !== 'jpg' && extension !== 'jpeg') {
+      setAlbumArtError('Choose a PNG or JPEG image.');
+      return;
+    }
+    setAlbumArtLoading(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      setAlbumArt({ bytes, extension: extension === 'png' ? 'png' : 'jpg' });
+      setAlbumArtError(null);
+    } catch {
+      setAlbumArtError('Could not read that image file. Pick a different file.');
+    } finally {
+      setAlbumArtLoading(false);
+    }
+  }
 
   return (
     <div className="finalize">
@@ -157,6 +209,83 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       <p className="view-hint">Review the song details and choose where to save the .sng file.</p>
 
       <MetadataForm metadata={gpMetadata} errors={errors} onChange={setMetadata} />
+
+      <section className="save-section">
+        <div className="save-section__dir">
+          <div className="settings-label">Album artwork</div>
+          <div className="album-art">
+            {albumArtUrl === null ? (
+              <span className="album-art__empty">No artwork selected</span>
+            ) : (
+              <img className="album-art__preview" src={albumArtUrl} alt="Album artwork" />
+            )}
+            <div className="album-art__actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => albumArtInputRef.current?.click()}
+                disabled={albumArtLoading}
+              >
+                {albumArt === null ? 'Choose artwork' : 'Change'}
+              </button>
+              {albumArt !== null && (
+                <button
+                  type="button"
+                  className="btn btn--destructive"
+                  onClick={clearAlbumArt}
+                  disabled={albumArtLoading}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <input
+          ref={albumArtInputRef}
+          type="file"
+          accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+          hidden
+          onChange={handleAlbumArtFile}
+        />
+        {albumArtError !== null && (
+          <div className="error-banner error-banner--inline">{albumArtError}</div>
+        )}
+      </section>
+
+      <section className="save-section">
+        <div className="save-section__dir">
+          <label className="settings-label" htmlFor="output-filename">
+            File name
+          </label>
+          <div className="save-section__filename-field">
+            <div className="save-section__filename-controls">
+              <input
+                id="output-filename"
+                className={`text-input${filenameError ? ' text-input--invalid' : ''}`}
+                value={filenameBase}
+                aria-invalid={filenameError}
+                aria-describedby={filenameError ? 'output-filename-error' : undefined}
+                onChange={(e) => setOutputFilenameOverride(withoutSngExtension(e.target.value))}
+              />
+              <span className="save-section__extension">.sng</span>
+              <button
+                type="button"
+                className="btn"
+                disabled={outputFilenameOverride === null}
+                onClick={() => setOutputFilenameOverride(null)}
+              >
+                Reset
+              </button>
+            </div>
+            {filenameError && (
+              <span id="output-filename-error" className="metadata-field__error">
+                File name is required
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
 
       <section className="save-section">
         <div className="save-section__dir">
@@ -189,7 +318,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
             <div
               className={`save-section__filename${saved ? ' save-section__filename--success' : ''}`}
             >
-              {saved ? 'Success!' : filenamePreview}
+              {saved ? 'Success!' : (filename ?? 'Enter a valid file name')}
             </div>
             {saved ? (
               <button type="button" className="btn btn--primary" onClick={() => reset()}>
@@ -200,7 +329,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 type="button"
                 className="btn btn--affirmative"
                 onClick={handleSave}
-                disabled={!isMetadataValid(gpMetadata) || saving}
+                disabled={!isMetadataValid(gpMetadata) || filename === null || saving || albumArtLoading}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>

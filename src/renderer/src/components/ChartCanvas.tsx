@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { DrumDynamic, NoteRef, YargNote } from '../../../shared/types/index';
+import type { WaveformOverview } from '../audio/waveform';
 import {
   type ChartLayout,
   currentBarIndex,
@@ -15,6 +16,8 @@ import {
   noteDims,
   noteToY,
   type PlacedNote,
+  waveformToY,
+  yToTime,
 } from '../playback/geometry';
 import {
   CONE_DARKEN,
@@ -57,6 +60,8 @@ export const HIT_LINE = '#ffffff'; // resting hit-line bars, full white; shared 
 const GEM_OUTLINE = '#ffffff'; // white outline on the hovered gem and the context-menu target
 const CANVAS_BG = '#0e1319'; // --bg-base (canvas margins beside the highway)
 const HIGHWAY_BG = '#171e27'; // --bg-surface (the highway strip)
+const WAVEFORM_COLOR = 'rgba(165, 177, 191, 0.32)';
+const WAVEFORM_HALF_WIDTH = 0.42; // full amplitude stays inside the painted strip
 const BAR_LINE = '#7c8794'; // measure lines under the gems, the lighter/more prominent of the two grays (tune)
 const BAR_LINE_WIDTH = 4; // measure lines, 4x the earlier 1px (spec §3, tune)
 const SUBDIVISION_LINE = '#4b5563'; // beat-subdivision lines: darker than the measure lines, still light gray (tune)
@@ -79,6 +84,8 @@ interface ChartCanvasProps {
   errorLines: { seconds: number; messages: string[] }[]; // blocking-error ticks (time + messages) drawn as red underlines
   barNumbers: (number | null)[]; // GP document bar per measure line, aligned with barLines; null for lead-in bars
   leadInBars: number; // count of leading empty lead-in bars (labeled "Lead-in 1", "Lead-in 2", …)
+  waveform: WaveformOverview | null;
+  audioOffsetSeconds: number;
   viewTime: number; // used while stopped
   isPlaying: boolean;
   pixelsPerSecond: number;
@@ -160,6 +167,8 @@ export function ChartCanvas(props: ChartCanvasProps) {
         p.barNumbers,
         p.leadInBars,
         p.errorLines,
+        p.waveform,
+        p.audioOffsetSeconds,
       );
       raf = requestAnimationFrame(draw);
     };
@@ -305,6 +314,8 @@ function paint(
   barNumbers: (number | null)[],
   leadInBars: number,
   errorLines: { seconds: number; messages: string[] }[],
+  waveform: WaveformOverview | null,
+  audioOffsetSeconds: number,
 ) {
   const { width, height, highwayLeft, highwayWidth, hitLineY, highwayBottomY } = layout;
   const grayEndY = highwayBottomY;
@@ -319,6 +330,8 @@ function paint(
   ctx.beginPath();
   ctx.roundRect(highwayLeft, 0, highwayWidth, grayEndY, HIGHWAY_RADIUS);
   ctx.fill();
+
+  if (waveform !== null) drawWaveform(ctx, waveform, audioOffsetSeconds, viewTime, layout);
 
   // Beat-subdivision lines under the gems (culled to the play area), drawn beneath the
   // measure lines so the heavier bar lines read on top of any coincident pixels.
@@ -437,6 +450,53 @@ function paint(
     ctx.fillText(label, lx, ly);
     ctx.restore();
   }
+}
+
+function drawWaveform(
+  ctx: CanvasRenderingContext2D,
+  waveform: WaveformOverview,
+  offsetSeconds: number,
+  viewTime: number,
+  layout: ChartLayout,
+) {
+  if (waveform.min.length === 0 || waveform.bucketDurationSeconds <= 0) return;
+
+  const visibleStart = Math.max(
+    0,
+    yToTime(layout.highwayBottomY, viewTime, layout) + offsetSeconds,
+  );
+  const visibleEnd = Math.min(
+    waveform.durationSeconds,
+    yToTime(0, viewTime, layout) + offsetSeconds,
+  );
+  if (visibleStart >= visibleEnd) return;
+
+  const first = Math.floor(visibleStart / waveform.bucketDurationSeconds);
+  const last = Math.min(
+    waveform.min.length,
+    Math.ceil(visibleEnd / waveform.bucketDurationSeconds),
+  );
+  const centerX = layout.highwayLeft + layout.highwayWidth / 2;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(layout.highwayLeft, 0, layout.highwayWidth, layout.highwayBottomY, HIGHWAY_RADIUS);
+  ctx.clip();
+  ctx.fillStyle = WAVEFORM_COLOR;
+  for (let i = first; i < last; i++) {
+    const peak = Math.max(Math.abs(waveform.min[i]), Math.abs(waveform.max[i]));
+    if (peak === 0) continue;
+    const halfWidth = peak * layout.highwayWidth * WAVEFORM_HALF_WIDTH;
+    const bottom = waveformToY(i * waveform.bucketDurationSeconds, offsetSeconds, viewTime, layout);
+    const top = waveformToY(
+      Math.min(waveform.durationSeconds, (i + 1) * waveform.bucketDurationSeconds),
+      offsetSeconds,
+      viewTime,
+      layout,
+    );
+    ctx.fillRect(centerX - halfWidth, top, 2 * halfWidth, bottom - top);
+  }
+  ctx.restore();
 }
 
 function refMatches(ref: NoteRef | null, note: YargNote): boolean {

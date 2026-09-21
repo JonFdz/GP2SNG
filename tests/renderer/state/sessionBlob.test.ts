@@ -44,7 +44,7 @@ describe('buildSessionBlob', () => {
     const blob = buildSessionBlob({
       gpFilePath: 'C:/songs/song.gp',
       gpBytes: new Uint8Array([1, 2, 3]),
-      selectedTrackId: 2,
+      selectedTrackIds: [2],
       sessionMap: DEFAULT_MIDI_MAP,
       sessionSettings: DEFAULT_CONVERSION_SETTINGS,
       chart: rawChart,
@@ -62,6 +62,7 @@ describe('buildSessionBlob', () => {
     expect(blob.deletions).toBe(deletions);
     expect(blob.metadata).toBe(metadata);
     expect(blob.audioOffsetMs).toBe(-120);
+    expect(blob).not.toHaveProperty('outputFilenameOverride');
   });
 
   // Regression for the branch's highest-risk line: FinalizeView.doWrite must pass
@@ -86,7 +87,7 @@ describe('buildSessionBlob', () => {
     const session = buildSessionBlob({
       gpFilePath: 'C:/songs/song.gp',
       gpBytes: new Uint8Array([1, 2, 3]),
-      selectedTrackId: 0,
+      selectedTrackIds: [0],
       sessionMap: DEFAULT_MIDI_MAP,
       sessionSettings: DEFAULT_CONVERSION_SETTINGS,
       chart: rawChart,

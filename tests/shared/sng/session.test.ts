@@ -49,7 +49,7 @@ function sampleBlob(): SessionBlob {
     gpFilePath: 'C:/songs/song.gp',
     // Deliberately includes 0x00 and high bytes: base64 must survive both.
     gpBytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0x7f]),
-    selectedTrackId: 2,
+    selectedTrackIds: [2],
     sessionMap: DEFAULT_MIDI_MAP,
     sessionSettings: DEFAULT_CONVERSION_SETTINGS,
     chart,
@@ -65,15 +65,63 @@ function sampleBlob(): SessionBlob {
 
 describe('session blob codec', () => {
   it('round-trips every member, GP bytes included', () => {
-    const blob = sampleBlob();
+    const blob = { ...sampleBlob(), selectedTrackIds: [2, 4] };
     const decoded = decodeSessionBlob(encodeSessionBlob(blob));
     expect(decoded).toEqual(blob);
     expect(Array.from(decoded.gpBytes)).toEqual(Array.from(blob.gpBytes));
   });
 
-  it('refuses a blob written by a different version', () => {
-    const bytes = encodeSessionBlob({ ...sampleBlob(), version: SESSION_BLOB_VERSION + 1 });
-    expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
+  it('writes version 3 and the array-only track selection', () => {
+    expect(SESSION_BLOB_VERSION).toBe(3);
+    const raw = reparse(sampleBlob());
+    expect(raw.selectedTrackIds).toEqual([2]);
+    expect(raw).not.toHaveProperty('selectedTrackId');
+  });
+
+  it('normalizes a valid V2 track ID to the current model', () => {
+    const raw = reparse(sampleBlob());
+    raw.version = 2;
+    delete raw.selectedTrackIds;
+    raw.selectedTrackId = 2;
+    const decoded = decodeSessionBlob(new TextEncoder().encode(JSON.stringify(raw)));
+    expect(decoded.version).toBe(3);
+    expect(decoded.selectedTrackIds).toEqual([2]);
+    expect(decoded).not.toHaveProperty('selectedTrackId');
+  });
+
+  it.each([undefined, null, '2', 2.5])('rejects malformed V2 selectedTrackId %s', (id) => {
+    const raw = reparse(sampleBlob());
+    raw.version = 2;
+    delete raw.selectedTrackIds;
+    if (id !== undefined) raw.selectedTrackId = id;
+    expect(() => decodeSessionBlob(new TextEncoder().encode(JSON.stringify(raw)))).toThrow(
+      SessionRestoreError,
+    );
+  });
+
+  it.each([
+    undefined,
+    null,
+    [],
+    [2, 2],
+    [2, '4'],
+    [2.5],
+    2,
+  ])('rejects malformed V3 selectedTrackIds %s', (ids) => {
+    const raw = reparse(sampleBlob());
+    if (ids === undefined) delete raw.selectedTrackIds;
+    else raw.selectedTrackIds = ids;
+    expect(() => decodeSessionBlob(new TextEncoder().encode(JSON.stringify(raw)))).toThrow(
+      SessionRestoreError,
+    );
+  });
+
+  it.each([
+    1,
+    SESSION_BLOB_VERSION + 1,
+  ])('refuses unsupported version %i with a version mismatch', (version) => {
+    const bytes = encodeSessionBlob({ ...sampleBlob(), version });
+    expect(() => decodeSessionBlob(bytes)).toThrow(/different version/);
   });
 
   it('refuses a blob with no version field at all as corrupt, not "different version"', () => {
@@ -147,6 +195,97 @@ describe('readSngSession', () => {
     const restored = readSngSession(writeSng(chart, metadata, audio, -120, sampleBlob()));
     expect(restored.blob).toEqual(sampleBlob());
     expect(Array.from(restored.audioBytes)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('restores PNG artwork unchanged', () => {
+    const art = {
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xaa]),
+      extension: 'png' as const,
+    };
+    const restored = readSngSession(writeSng(chart, metadata, audio, -120, sampleBlob(), art));
+
+    expect(restored.albumArt?.extension).toBe('png');
+    expect(Array.from(restored.albumArt?.bytes ?? [])).toEqual(Array.from(art.bytes));
+  });
+
+  it('restores JPG artwork unchanged and preserves it through re-export', () => {
+    const art = {
+      bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0xbb]),
+      extension: 'jpg' as const,
+    };
+    const restored = readSngSession(writeSng(chart, metadata, audio, -120, sampleBlob(), art));
+    const reexported = readSng(
+      writeSng(chart, metadata, audio, -120, restored.blob, restored.albumArt),
+    );
+
+    expect(restored.albumArt?.extension).toBe('jpg');
+    expect(Array.from(reexported.files['album.jpg'])).toEqual(Array.from(art.bytes));
+  });
+
+  it('restores album.jpeg as JPEG artwork unchanged', () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0xcc]);
+    const sng = buildSngContainer(
+      [
+        { name: 'notes.mid', bytes: buildMidi(chart) },
+        { name: 'song.ogg', bytes: audio.bytes },
+        { name: 'album.jpeg', bytes: jpeg },
+        { name: 'gp2sng.json', bytes: encodeSessionBlob(sampleBlob()) },
+      ],
+      [],
+      new Uint8Array(16),
+    );
+
+    const restored = readSngSession(sng);
+    expect(restored.albumArt?.extension).toBe('jpg');
+    expect(Array.from(restored.albumArt?.bytes ?? [])).toEqual(Array.from(jpeg));
+  });
+
+  it('prefers album.png, then album.jpg, then album.jpeg when multiple names exist', () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const jpg = new Uint8Array([0xff, 0xd8, 0xff]);
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xee]);
+    const both = buildSngContainer(
+      [
+        { name: 'notes.mid', bytes: buildMidi(chart) },
+        { name: 'song.ogg', bytes: audio.bytes },
+        { name: 'album.png', bytes: png },
+        { name: 'album.jpg', bytes: jpg },
+        { name: 'album.jpeg', bytes: jpeg },
+        { name: 'gp2sng.json', bytes: encodeSessionBlob(sampleBlob()) },
+      ],
+      [],
+      new Uint8Array(16),
+    );
+
+    const restored = readSngSession(both);
+    expect(restored.albumArt?.extension).toBe('png');
+    expect(Array.from(restored.albumArt?.bytes ?? [])).toEqual(Array.from(png));
+  });
+
+  it('prefers album.jpg over album.jpeg', () => {
+    const jpg = new Uint8Array([0xff, 0xd8, 0xff]);
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xee]);
+    const sng = buildSngContainer(
+      [
+        { name: 'notes.mid', bytes: buildMidi(chart) },
+        { name: 'song.ogg', bytes: audio.bytes },
+        { name: 'album.jpg', bytes: jpg },
+        { name: 'album.jpeg', bytes: jpeg },
+        { name: 'gp2sng.json', bytes: encodeSessionBlob(sampleBlob()) },
+      ],
+      [],
+      new Uint8Array(16),
+    );
+
+    const restored = readSngSession(sng);
+    expect(restored.albumArt?.extension).toBe('jpg');
+    expect(Array.from(restored.albumArt?.bytes ?? [])).toEqual(Array.from(jpg));
+  });
+
+  it('restores a session with no artwork as before', () => {
+    const restored = readSngSession(writeSng(chart, metadata, audio, -120, sampleBlob()));
+
+    expect(restored.albumArt).toBeUndefined();
   });
 
   it('leaves notes.mid and the audio file untouched', () => {
