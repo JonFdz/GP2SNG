@@ -308,7 +308,7 @@ body {
   color: var(--text-muted);
 }
 
-/* Load step: the drum-track picker sits below the load summary on the same page */
+/* Load step: track selection sits below the load summary on the same page */
 .track-select {
   margin-top: 24px;
 }
@@ -337,6 +337,14 @@ body {
   transition: border-color 120ms, background-color 120ms;
 }
 
+.track-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0 12px 0 0;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
 .track-row:hover {
   border-color: var(--bg-raised);
 }
@@ -349,6 +357,7 @@ body {
 
 .track-row__name {
   font-weight: 600;
+  margin-right: auto;
 }
 
 .track-row__meta {
@@ -1121,6 +1130,23 @@ body {
   width: 96px;
 }
 
+.transport__offset-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.transport__offset-controls .btn {
+  padding: 4px 6px;
+}
+
+.transport__offset-controls .text-input {
+  flex: 1 1 64px;
+  min-width: 64px;
+  width: 64px;
+}
+
 /* Metadata form */
 .metadata-form {
   display: flex;
@@ -1216,6 +1242,29 @@ body {
 
 .save-section__filename--success {
   color: var(--accent-green);
+}
+
+.album-art {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.album-art__empty {
+  color: var(--text-muted);
+}
+
+.album-art__preview {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.album-art__actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* Finalize step: metadata form + save destination, full-width like other pages */

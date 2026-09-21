@@ -9,15 +9,21 @@ import type { ConversionWarning } from './warnings';
 // container files, so this rides along harmlessly.
 export const SESSION_BLOB_FILENAME = 'gp2sng.json';
 
-// Bumped whenever this shape changes. Per the project's no-legacy rule there is no
-// migration path: a mismatch is refused and the user re-converts from the GP file.
-export const SESSION_BLOB_VERSION = 2;
+// V2 single-track sessions are normalized by the decoder to this current shape.
+export const SESSION_BLOB_VERSION = 3;
+
+// A binary asset carried as its own SNG container member, never in the JSON
+// editing-session blob.
+export interface AlbumArt {
+  bytes: Uint8Array;
+  extension: 'png' | 'jpg';
+}
 
 export interface SessionBlob {
   version: number;
   gpFilePath: string; // for display only; the bytes below are the source of truth
   gpBytes: Uint8Array; // the source GP file, so reopening never depends on it still existing
-  selectedTrackId: number;
+  selectedTrackIds: number[];
   sessionMap: MidiMap;
   sessionSettings: ConversionSettings;
   // The RAW conversion output, not the displayed chart: the edit layers below are

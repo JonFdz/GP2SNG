@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { previewAudioOffsetSeconds } from '../../../src/renderer/src/audio/index';
 import {
   type ChartLayout,
   currentBarIndex,
@@ -23,6 +24,7 @@ import {
   type PlacedNote,
   previousBarStart,
   previousErrorTime,
+  waveformToY,
   yToTime,
 } from '../../../src/renderer/src/playback/geometry';
 import type { YargNote } from '../../../src/shared/types/index';
@@ -111,6 +113,34 @@ describe('noteToY / yToTime', () => {
   it('is the inverse of yToTime', () => {
     expect(yToTime(220, 1, layout)).toBeCloseTo(2);
     expect(yToTime(520, 1, layout)).toBeCloseTo(1);
+  });
+});
+
+describe('waveformToY', () => {
+  const fastLayout: ChartLayout = { ...layout, pixelsPerSecond: 700 };
+  const chart = {
+    leadInTicks: 1920,
+    resolution: 480,
+    tempoMap: [{ tick: 0, usPerQuarter: 500000 }],
+  };
+
+  it('maps a zero-offset audio point to the same chart position as a note', () => {
+    const offset = previewAudioOffsetSeconds(chart, 0, 2000);
+    expect(offset).toBe(0);
+    expect(waveformToY(2, offset, 2, fastLayout)).toBe(noteToY(2, 2, fastLayout));
+  });
+
+  it('moves a fixed audio point down 70 px at +100 ms without moving chart notes', () => {
+    const noteY = noteToY(2, 2, fastLayout);
+    const offset = previewAudioOffsetSeconds(chart, 100, 2000);
+    expect(waveformToY(2, offset, 2, fastLayout) - noteY).toBeCloseTo(70);
+    expect(noteToY(2, 2, fastLayout)).toBe(noteY);
+  });
+
+  it('moves a fixed audio point up 70 px at -100 ms', () => {
+    const noteY = noteToY(2, 2, fastLayout);
+    const offset = previewAudioOffsetSeconds(chart, -100, 2000);
+    expect(waveformToY(2, offset, 2, fastLayout) - noteY).toBeCloseTo(-70);
   });
 });
 

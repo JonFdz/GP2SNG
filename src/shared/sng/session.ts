@@ -1,4 +1,5 @@
 import {
+  type AlbumArt,
   SESSION_BLOB_FILENAME,
   SESSION_BLOB_VERSION,
   type SessionBlob,
@@ -13,7 +14,6 @@ import { readSng } from './container';
 const REQUIRED_MEMBERS: readonly string[] = [
   'gpFilePath',
   'gpFileBase64',
-  'selectedTrackId',
   'sessionMap',
   'sessionSettings',
   'chart',
@@ -65,7 +65,7 @@ export function decodeSessionBlob(bytes: Uint8Array): SessionBlob {
   // An absent version is a corrupt/foreign blob, not "a different version" — that
   // message implies a recognizable-but-mismatched blob, which this isn't.
   if (!('version' in parsed)) throw new SessionRestoreError(CORRUPT, { missing: 'version' });
-  if (parsed.version !== SESSION_BLOB_VERSION) {
+  if (parsed.version !== 2 && parsed.version !== SESSION_BLOB_VERSION) {
     throw new SessionRestoreError(
       'This .sng was made by a different version of GP2SNG. Re-convert it from the original Guitar Pro file.',
       { version: parsed.version },
@@ -73,6 +73,24 @@ export function decodeSessionBlob(bytes: Uint8Array): SessionBlob {
   }
   for (const member of REQUIRED_MEMBERS) {
     if (!(member in parsed)) throw new SessionRestoreError(CORRUPT, { missing: member });
+  }
+  if (parsed.version === 2) {
+    if (!Number.isInteger(parsed.selectedTrackId)) {
+      throw new SessionRestoreError(CORRUPT, { missing: 'selectedTrackId' });
+    }
+    parsed.selectedTrackIds = [parsed.selectedTrackId];
+    delete parsed.selectedTrackId;
+    parsed.version = SESSION_BLOB_VERSION;
+  } else {
+    const ids = parsed.selectedTrackIds;
+    if (
+      !Array.isArray(ids) ||
+      ids.length === 0 ||
+      !ids.every((id) => Number.isInteger(id)) ||
+      new Set(ids).size !== ids.length
+    ) {
+      throw new SessionRestoreError(CORRUPT, { missing: 'selectedTrackIds' });
+    }
   }
   // Presence-only validation would let a malformed `chart`/`sessionMap` crash the
   // renderer deep inside rendering instead of refusing here (there is no error
@@ -115,6 +133,7 @@ const AUDIO_FILE = /^song\.[^.]+$/;
 export interface RestoredSession {
   blob: SessionBlob;
   audioBytes: Uint8Array;
+  albumArt?: AlbumArt;
 }
 
 // Everything a reopened .sng yields, short of parsing its GP bytes — that happens
@@ -144,5 +163,16 @@ export function readSngSession(sngBytes: Uint8Array): RestoredSession {
     );
   }
 
-  return { blob, audioBytes: files[audioName] };
+  // Compatibility readers prefer PNG, then the canonical JPEG name, then its
+  // legacy spelling. New exports contain at most one artwork member.
+  const albumArt =
+    files['album.png'] !== undefined
+      ? { bytes: files['album.png'], extension: 'png' as const }
+      : files['album.jpg'] !== undefined
+        ? { bytes: files['album.jpg'], extension: 'jpg' as const }
+        : files['album.jpeg'] !== undefined
+          ? { bytes: files['album.jpeg'], extension: 'jpg' as const }
+          : undefined;
+
+  return { blob, audioBytes: files[audioName], albumArt };
 }

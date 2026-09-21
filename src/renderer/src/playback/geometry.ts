@@ -92,6 +92,17 @@ export function yToTime(y: number, viewTime: number, layout: ChartLayout): numbe
   return viewTime + (layout.hitLineY - y) / layout.pixelsPerSecond;
 }
 
+// Playback maps chartTime to audioTime by adding offsetSeconds. Project an audio
+// sample through the inverse mapping and the same geometry used by chart notes.
+export function waveformToY(
+  audioTime: number,
+  offsetSeconds: number,
+  viewTime: number,
+  layout: ChartLayout,
+): number {
+  return noteToY(audioTime - offsetSeconds, viewTime, layout);
+}
+
 // Bottom-anchored bounding box for hit-testing. Uses base (neutral) footprints so
 // ghost/accent variants keep the same forgiving target.
 function noteBox(note: BaseYargNote, yBottom: number, layout: ChartLayout) {
