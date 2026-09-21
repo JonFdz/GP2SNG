@@ -1,4 +1,5 @@
 import {
+  type AlbumArt,
   SESSION_BLOB_FILENAME,
   SESSION_BLOB_VERSION,
   type SessionBlob,
@@ -132,6 +133,7 @@ const AUDIO_FILE = /^song\.[^.]+$/;
 export interface RestoredSession {
   blob: SessionBlob;
   audioBytes: Uint8Array;
+  albumArt?: AlbumArt;
 }
 
 // Everything a reopened .sng yields, short of parsing its GP bytes — that happens
@@ -161,5 +163,16 @@ export function readSngSession(sngBytes: Uint8Array): RestoredSession {
     );
   }
 
-  return { blob, audioBytes: files[audioName] };
+  // Compatibility readers prefer PNG, then the canonical JPEG name, then its
+  // legacy spelling. New exports contain at most one artwork member.
+  const albumArt =
+    files['album.png'] !== undefined
+      ? { bytes: files['album.png'], extension: 'png' as const }
+      : files['album.jpg'] !== undefined
+        ? { bytes: files['album.jpg'], extension: 'jpg' as const }
+        : files['album.jpeg'] !== undefined
+          ? { bytes: files['album.jpeg'], extension: 'jpg' as const }
+          : undefined;
+
+  return { blob, audioBytes: files[audioName], albumArt };
 }

@@ -91,4 +91,36 @@ describe('writeSng', () => {
 
     expect(sng.metadata.delay).toBe('0');
   });
+
+  it('writes PNG artwork unchanged as album.png', () => {
+    const art = {
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]),
+      extension: 'png' as const,
+    };
+    const sng = readSng(writeSng(chart, meta, undefined, 0, session(), art));
+
+    expect(Array.from(sng.files['album.png'])).toEqual(Array.from(art.bytes));
+    expect(sng.files['album.jpg']).toBeUndefined();
+    expect(sng.files['notes.mid']).toBeDefined();
+    expect(sng.files['gp2sng.json']).toBeDefined();
+  });
+
+  it('writes JPEG artwork unchanged as the canonical album.jpg name', () => {
+    // The picker normalizes both .jpg and .jpeg source filenames to this state shape.
+    const art = {
+      bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02]),
+      extension: 'jpg' as const,
+    };
+    const sng = readSng(writeSng(chart, meta, undefined, 0, session(), art));
+
+    expect(Array.from(sng.files['album.jpg'])).toEqual(Array.from(art.bytes));
+    expect(sng.files['album.png']).toBeUndefined();
+  });
+
+  it('adds no artwork member when artwork is absent', () => {
+    const sng = readSng(writeSng(chart, meta, undefined, 0, session()));
+
+    expect(sng.files['album.png']).toBeUndefined();
+    expect(sng.files['album.jpg']).toBeUndefined();
+  });
 });

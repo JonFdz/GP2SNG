@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  AlbumArt,
   ConversionSettings,
   ConversionWarning,
   CymbalPriorities,
@@ -135,8 +136,10 @@ export interface WizardState {
   audioBytes: Uint8Array | null; // original source bytes, bundled by the writer
   audioOffsetMs: number; // the SNG `delay` value
   audioPaddingMs: number; // silence already prepended to audioBytes
+  albumArt: AlbumArt | null; // opaque image bytes, stored as its own SNG member
   viewTime: number; // seconds from chart start currently at the hit line
   pixelsPerSecond: number; // highway scroll speed (view-only preference)
+  showWaveform: boolean; // Preview-only visualization preference
   previewVolume: number; // preview audio gain, 1 = 100% (view-only preference)
   playbackRate: number; // preview playback speed, 1 = 100% (view-only preference)
   metronomeOn: boolean; // preview metronome toggle (view-only preference)
@@ -161,6 +164,7 @@ export interface WizardState {
     score: ParsedGpScore;
     blob: SessionBlob;
     audioBytes: Uint8Array;
+    albumArt?: AlbumArt;
   }) => void;
   toggleTrack: (trackId: number) => void;
   // Initialize the session map from the global map on entering Mapping. A no-op
@@ -173,9 +177,12 @@ export interface WizardState {
   setMetadata: (patch: Partial<SongMetadata>) => void;
   setAudio: (audio: { buffer: AudioBuffer; bytes: Uint8Array; paddingMs: number }) => void;
   clearAudio: () => void;
+  setAlbumArt: (albumArt: AlbumArt) => void;
+  clearAlbumArt: () => void;
   setAudioOffsetMs: (ms: number) => void;
   setViewTime: (t: number) => void;
   setPixelsPerSecond: (pps: number) => void;
+  setShowWaveform: (show: boolean) => void;
   setPreviewVolume: (v: number) => void;
   setPlaybackRate: (r: number) => void;
   setMetronomeOn: (on: boolean) => void;
@@ -216,8 +223,10 @@ const INITIAL = {
   audioBytes: null,
   audioOffsetMs: 0,
   audioPaddingMs: 0,
+  albumArt: null,
   viewTime: 0,
   pixelsPerSecond: DEFAULT_PIXELS_PER_SECOND,
+  showWaveform: true,
   previewVolume: 1,
   playbackRate: 1,
   metronomeOn: false,
@@ -259,7 +268,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       score,
       selectedTrackIds: detectDrumTracks(score.tracks),
     }),
-  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes }) => {
+  restoreSession: ({ gpFilePath, gpFileBytes, score, blob, audioBytes, albumArt }) => {
     if (blob.selectedTrackIds.some((id) => !score.tracks.some((track) => track.id === id))) {
       throw new SessionRestoreError(
         "This .sng's GP2SNG session data is corrupt. Re-convert it from the original Guitar Pro file.",
@@ -287,6 +296,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       audioBytes,
       audioOffsetMs: blob.audioOffsetMs,
       audioPaddingMs: blob.audioPaddingMs,
+      albumArt: albumArt ?? null,
       overrides: blob.overrides,
       deletions: blob.deletions,
       previewRemaps: blob.previewRemaps,
@@ -357,9 +367,12 @@ export const useWizardStore = create<WizardState>((set) => ({
   setAudio: ({ buffer, bytes, paddingMs }) =>
     set({ audioBuffer: buffer, audioBytes: bytes, audioPaddingMs: paddingMs }),
   clearAudio: () => set({ audioBuffer: null, audioBytes: null, audioPaddingMs: 0 }),
+  setAlbumArt: (albumArt) => set({ albumArt }),
+  clearAlbumArt: () => set({ albumArt: null }),
   setAudioOffsetMs: (ms) => set({ audioOffsetMs: ms }),
   setViewTime: (t) => set({ viewTime: t }),
   setPixelsPerSecond: (pps) => set({ pixelsPerSecond: pps }),
+  setShowWaveform: (show) => set({ showWaveform: show }),
   setPreviewVolume: (v) => set({ previewVolume: v }),
   setPlaybackRate: (r) => set({ playbackRate: r }),
   setMetronomeOn: (on) => set({ metronomeOn: on }),

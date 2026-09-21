@@ -12,6 +12,13 @@ export const SESSION_BLOB_FILENAME = 'gp2sng.json';
 // V2 single-track sessions are normalized by the decoder to this current shape.
 export const SESSION_BLOB_VERSION = 3;
 
+// A binary asset carried as its own SNG container member, never in the JSON
+// editing-session blob.
+export interface AlbumArt {
+  bytes: Uint8Array;
+  extension: 'png' | 'jpg';
+}
+
 export interface SessionBlob {
   version: number;
   gpFilePath: string; // for display only; the bytes below are the source of truth
