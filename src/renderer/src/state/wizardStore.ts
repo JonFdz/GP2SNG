@@ -16,6 +16,7 @@ import type {
   YargChart,
   YargNoteId,
 } from '../../../shared/types/index';
+
 import {
   DEFAULT_CONVERSION_SETTINGS,
   SessionRestoreError,
@@ -23,6 +24,8 @@ import {
 } from '../../../shared/types/index';
 import { detectDrumTracks } from './detectDrumTracks';
 import { reopenedOutputFilenameOverride } from './outputFilename';
+import { deriveTempoScale, scaleChartTempo } from './tempoCorrection';
+
 
 // Default highway scroll speed in px/s (docs/DESIGN.md → Highway scroll speed):
 // a view-only preference, not persisted.
@@ -129,6 +132,7 @@ export interface WizardState {
   baselineMap: MidiMap | null;
   baselineSettings: ConversionSettings;
   chart: YargChart | null;
+  tempoScale: number; // session-local editing state; only chart.tempoMap is saved
   warnings: ConversionWarning[];
 
   // Preview-scoped state (docs/DESIGN.md → Chart preview → Data-model impact).
@@ -177,6 +181,7 @@ export interface WizardState {
   setSessionMap: (next: MidiMap) => void;
   setSessionSettings: (next: ConversionSettings) => void;
   setConversion: (chart: YargChart, warnings: ConversionWarning[]) => void;
+  setTempoScale: (scale: number) => void;
   setMetadata: (patch: Partial<SongMetadata>) => void;
   setOutputFilenameOverride: (value: string | null) => void;
   setAudio: (audio: { buffer: AudioBuffer; bytes: Uint8Array; paddingMs: number }) => void;
@@ -221,6 +226,7 @@ const INITIAL = {
   settingsDirty: false,
   baselineMap: null,
   chart: null,
+  tempoScale: 1,
   warnings: [] as ConversionWarning[],
   metadata: null,
   outputFilenameOverride: null,
@@ -294,6 +300,7 @@ export const useWizardStore = create<WizardState>((set) => ({
       baselineSettings: blob.sessionSettings,
       settingsDirty: false,
       chart: blob.chart,
+      tempoScale: deriveTempoScale(score, blob.chart),
       warnings: blob.warnings,
       metadata: blob.metadata,
       outputFilenameOverride: reopenedOutputFilenameOverride(
@@ -371,7 +378,15 @@ export const useWizardStore = create<WizardState>((set) => ({
       chart: null,
       warnings: [],
     })),
-  setConversion: (chart, warnings) => set({ chart, warnings }),
+  // Every converter caller supplies an unadjusted GP chart. This single path
+  // reapplies the session's absolute correction after remaps and mapping edits.
+  setConversion: (chart, warnings) =>
+    set((s) => ({ chart: scaleChartTempo(chart, 1, s.tempoScale), warnings })),
+  setTempoScale: (tempoScale) =>
+    set((s) => {
+      if (s.chart === null) throw new Error('Convert a chart before adjusting tempo.');
+      return { chart: scaleChartTempo(s.chart, s.tempoScale, tempoScale), tempoScale };
+    }),
   setMetadata: (patch) =>
     set((s) => ({ metadata: { ...(s.metadata ?? BLANK_METADATA), ...patch } })),
   setOutputFilenameOverride: (value) => set({ outputFilenameOverride: value }),
