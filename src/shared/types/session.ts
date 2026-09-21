@@ -13,6 +13,13 @@ export const SESSION_BLOB_FILENAME = 'gp2sng.json';
 // migration path: a mismatch is refused and the user re-converts from the GP file.
 export const SESSION_BLOB_VERSION = 2;
 
+// A binary asset carried as its own SNG container member, never in the JSON
+// editing-session blob.
+export interface AlbumArt {
+  bytes: Uint8Array;
+  extension: 'png' | 'jpg';
+}
+
 export interface SessionBlob {
   version: number;
   gpFilePath: string; // for display only; the bytes below are the source of truth
