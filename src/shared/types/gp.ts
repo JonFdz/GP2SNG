@@ -59,7 +59,7 @@ export interface ParsedGpTrack {
   id: number;
   name: string;
   isDrumKit: boolean;
-  noteCount: number; // total notes across all beats (drives auto-detection)
+  noteCount: number; // total notes across all beats (drives Load validation)
   bars: GpBar[]; // one per master bar, aligned by index to ParsedGpScore.masterBars
 }
 

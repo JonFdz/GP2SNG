@@ -41,7 +41,7 @@ const audio = { bytes: Uint8Array.from([0xff, 0x00, 0x13, 0x37]), extension: 'OG
 
 // parse → map → convert → write → read back.
 const score = parseGp(exampleBytes);
-const { chart, warnings } = convertToYargChart(score, score.tracks[0].id, DEFAULT_MIDI_MAP);
+const { chart, warnings } = convertToYargChart(score, [score.tracks[0].id], DEFAULT_MIDI_MAP);
 
 // The blob is opaque to most of these tests — they assert container and MIDI
 // structure — but writeSng requires one, so this is the minimum well-formed value.
@@ -51,7 +51,7 @@ function session(): SessionBlob {
     version: SESSION_BLOB_VERSION,
     gpFilePath: 'C:/songs/song.gp',
     gpBytes: exampleBytes,
-    selectedTrackId: 0,
+    selectedTrackIds: [0],
     sessionMap: DEFAULT_MIDI_MAP,
     sessionSettings: DEFAULT_CONVERSION_SETTINGS,
     chart,
@@ -155,7 +155,7 @@ describe('GP → SNG pipeline (integration)', () => {
     expect(drums.notes.every((n) => n.note !== 110)).toBe(true);
     // Remapping 42 to yellow tom must surface that marker in the final .sng.
     const remapped = applyRemap(DEFAULT_MIDI_MAP, 42, 'yellowTom');
-    const res = convertToYargChart(score, score.tracks[0].id, remapped);
+    const res = convertToYargChart(score, [score.tracks[0].id], remapped);
     const rmidi = readMidi(
       readSng(writeSng(res.chart, metadata, undefined, 0, session())).files['notes.mid'],
     );

@@ -29,12 +29,12 @@ function stepClass(index: number, current: number, reachable: boolean): string {
 }
 
 // A step is clickable only when it can render without a blank screen: Load/Mapping
-// once a track with notes is chosen, Preview/Finalize once Confirm mapping has
+// once selected tracks contain notes, Preview/Finalize once Confirm mapping has
 // produced the chart (both early-return blank without it).
 function stepReachable(
   id: WizardStep,
   score: WizardState['score'],
-  selectedTrackId: WizardState['selectedTrackId'],
+  selectedTrackIds: WizardState['selectedTrackIds'],
   chart: WizardState['chart'],
   hasErrors: boolean,
   hasAudio: boolean,
@@ -43,7 +43,7 @@ function stepReachable(
     case 'load':
       return score !== null;
     case 'mapping':
-      return canAdvance('load', score, selectedTrackId);
+      return canAdvance('load', score, selectedTrackIds);
     case 'preview':
       return chart !== null;
     default: // 'finalize'
@@ -64,7 +64,7 @@ function stepReachable(
 export function WizardShell() {
   const step = useWizardStore((s) => s.step);
   const score = useWizardStore((s) => s.score);
-  const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
+  const selectedTrackIds = useWizardStore((s) => s.selectedTrackIds);
   const chart = useWizardStore((s) => s.chart);
   const audioBytes = useWizardStore((s) => s.audioBytes);
   const sessionMap = useWizardStore((s) => s.sessionMap);
@@ -106,13 +106,13 @@ export function WizardShell() {
   const currentIndex = STEPS.findIndex((s) => s.id === step);
 
   function handleConfirm() {
-    if (score === null || selectedTrackId === null) return;
+    if (score === null || selectedTrackIds.length === 0) return;
     setConfirmError(null);
     const activeMap = sessionMap ?? globalMap;
     try {
       const { chart: newChart, warnings } = convertToYargChart(
         score,
-        selectedTrackId,
+        selectedTrackIds,
         activeMap,
         sessionSettings,
       );
@@ -151,7 +151,7 @@ export function WizardShell() {
             label: 'Next',
             onClick: goNext,
             disabled:
-              !canAdvance(step, score, selectedTrackId) ||
+              !canAdvance(step, score, selectedTrackIds) ||
               (step === 'preview' && (hasErrors || !hasAudio)),
           }
         : null;
@@ -165,7 +165,14 @@ export function WizardShell() {
     <div className="wizard">
       <ol className="progress">
         {STEPS.map((s, i) => {
-          const reachable = stepReachable(s.id, score, selectedTrackId, chart, hasErrors, hasAudio);
+          const reachable = stepReachable(
+            s.id,
+            score,
+            selectedTrackIds,
+            chart,
+            hasErrors,
+            hasAudio,
+          );
           return (
             <Fragment key={s.id}>
               {i > 0 && <li className="progress__line" aria-hidden="true" />}

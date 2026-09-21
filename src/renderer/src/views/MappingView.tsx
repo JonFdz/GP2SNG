@@ -14,7 +14,7 @@ import { useWizardStore } from '../state/wizardStore';
 // was edited, offers to promote it to the global map (§10).
 export function MappingView() {
   const score = useWizardStore((s) => s.score);
-  const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
+  const selectedTrackIds = useWizardStore((s) => s.selectedTrackIds);
   const sessionMap = useWizardStore((s) => s.sessionMap);
   const sessionSettings = useWizardStore((s) => s.sessionSettings);
   const startSession = useWizardStore((s) => s.startSession);
@@ -29,12 +29,14 @@ export function MappingView() {
     if (sessionMap === null) startSession(globalMap, conversionSettings);
   }, [sessionMap, startSession, globalMap, conversionSettings]);
 
-  const selectedTrack = score?.tracks.find((t) => t.id === selectedTrackId);
-  if (score === null || selectedTrack === undefined) return null; // Next-gating guarantees a track
+  const selectedTracks = score?.tracks.filter((track) => selectedTrackIds.includes(track.id));
+  if (score === null || selectedTracks === undefined || selectedTracks.length === 0) return null;
 
   const activeMap = sessionMap ?? globalMap;
-  const displayNumbers = trackMidiNumbers(selectedTrack);
-  const overlaps = detectOverlaps(selectedTrack, activeMap);
+  const displayNumbers = trackMidiNumbers(selectedTracks);
+  const graceNoteSpacing =
+    sessionMap === null ? conversionSettings.graceNoteSpacing : sessionSettings.graceNoteSpacing;
+  const overlaps = detectOverlaps(selectedTracks, activeMap, graceNoteSpacing);
   const combinedOverlaps = combineOverlaps(overlaps);
 
   return (
@@ -73,9 +75,9 @@ export function MappingView() {
       <section className="settings-section">
         <div className="settings-label">Settings</div>
         <p className="view-hint">
-          Confirm how this track's MIDI notes map to YARG gems. Drag MIDI notes between YARG gems to
-          change how they are mapped. Changes here apply to this song only unless you choose to
-          update the global map (you will be prompted).
+          Confirm how the selected tracks' MIDI notes map to YARG gems. Drag MIDI notes between YARG
+          gems to change how they are mapped. Changes here apply to this song only unless you choose
+          to update the global map (you will be prompted).
         </p>
         <MidiMapView
           map={activeMap}

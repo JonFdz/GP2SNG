@@ -1,11 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { convertToYargChart, detectOverlaps } from '../../../src/shared/convert/index';
+import {
+  convertToYargChart,
+  detectChartErrors,
+  detectOverlaps,
+} from '../../../src/shared/convert/index';
 import { parseGp } from '../../../src/shared/gp/index';
 import { setRideBellAndHiHatAccented } from '../../../src/shared/midi/index';
 import {
   BASE_YARG_NOTES,
+  ConversionError,
   type ConversionSettings,
   DEFAULT_CONVERSION_SETTINGS,
   DEFAULT_MIDI_MAP,
@@ -18,7 +23,7 @@ const bytes = new Uint8Array(
   readFileSync(fileURLToPath(new URL('../../fixtures/example.gp', import.meta.url))),
 );
 const score = parseGp(bytes);
-const { chart, warnings } = convertToYargChart(score, 0, DEFAULT_MIDI_MAP);
+const { chart, warnings } = convertToYargChart(score, [0], DEFAULT_MIDI_MAP);
 
 describe('convertToYargChart — structure', () => {
   it('produces a 480-PPQ chart with notes', () => {
@@ -90,7 +95,7 @@ describe('convertToYargChart — lead-in', () => {
   it('derives the lead-in from the first bar signature, not an assumed 4/4', () => {
     const s = oneBarScore([{ notes: [{ midi: 38 }] }]);
     s.masterBars[0].timeSignature = { numerator: 7, denominator: 8 };
-    const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart: c } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(c.leadInTicks).toBe(2 * ((7 * 4 * 480) / 8)); // 2 bars of 7/8 = 2 * 1680 = 3360
   });
 
@@ -98,7 +103,7 @@ describe('convertToYargChart — lead-in', () => {
     const s = oneBarScore([{ notes: [{ midi: 38 }] }], {
       tempoAutomations: [{ bar: 0, position: 0, bpm: 90, linear: false }],
     });
-    const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart: c } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(c.leadInTicks).toBe(1920); // 1 bar of 4/4 — 90 BPM clears the 2 s floor already
   });
 
@@ -115,14 +120,14 @@ describe('convertToYargChart — lead-in', () => {
 
   it('grows endTick by the lead-in', () => {
     const s = oneBarScore([{ notes: [{ midi: 38 }] }]);
-    const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart: c } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(c.endTick).toBe(1920 + c.leadInTicks);
   });
 
   it('lets a grace on the very first beat flam back into the lead-in bars', () => {
     // Without a lead-in this clamped to tick 0 and the flam was lost.
     const s = oneBarScore([{ notes: [{ midi: 42 }], grace: true }, { notes: [{ midi: 38 }] }]);
-    const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart: c } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(c.notes.find((n) => n.note === 'yellowCymbal')?.tick).toBe(c.leadInTicks - 30);
   });
 
@@ -138,7 +143,7 @@ describe('convertToYargChart — lead-in', () => {
         { bar: 0, position: 0, bpm: 140, linear: false },
       ],
     });
-    const { chart: c } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart: c } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(c.leadInTicks).toBe(2 * 1920); // 140 BPM >= 120 -> 2 bars
     expect(c.tempoMap[0]).toEqual({ tick: 0, usPerQuarter: Math.round(60000000 / 140) });
   });
@@ -152,14 +157,14 @@ describe('convertToYargChart — warnings & errors', () => {
   it('throws when nothing maps', () => {
     const empty: MidiMap = { ...DEFAULT_MIDI_MAP };
     for (const k of Object.keys(empty) as (keyof MidiMap)[]) empty[k] = [];
-    expect(() => convertToYargChart(score, 0, empty)).toThrow(/map to any YARG note/);
+    expect(() => convertToYargChart(score, [0], empty)).toThrow(/map to any YARG note/);
   });
 
   it('warns about unmapped dropped notes', () => {
     // Drop 42 (hi-hat) from the map -> it becomes an unmapped, dropped value.
     // (46 lives in yellowCymbalAccented by default, so it is not re-listed here.)
     const noHat: MidiMap = { ...DEFAULT_MIDI_MAP, yellowCymbal: [44, 54] };
-    const res = convertToYargChart(score, 0, noHat);
+    const res = convertToYargChart(score, [0], noHat);
     const w = res.warnings.find((x) => x.kind === 'unmappedNotesDropped');
     expect(w).toBeTruthy();
     expect((w?.context as { midi: number[] }).midi).toContain(42);
@@ -216,7 +221,7 @@ describe('convertToYargChart — tempo across repeats', () => {
     // bars start at ticks 3840, 5760, 7680, 9600. The lead-in's opening-tempo
     // point at tick 0 makes the (equal) 120 BPM event at 3840 redundant, so it
     // collapses.
-    const res = convertToYargChart(repeatWithTempos(2), 0, DEFAULT_MIDI_MAP);
+    const res = convertToYargChart(repeatWithTempos(2), [0], DEFAULT_MIDI_MAP);
     const us120 = Math.round(60_000_000 / 120);
     const us240 = Math.round(60_000_000 / 240);
     expect(res.chart.tempoMap).toEqual([
@@ -230,7 +235,7 @@ describe('convertToYargChart — tempo across repeats', () => {
 
 describe('detectOverlaps', () => {
   it('returns an array (0+ three-hand-note warnings) for the fixture', () => {
-    const w = detectOverlaps(score.tracks[0], DEFAULT_MIDI_MAP);
+    const w = detectOverlaps([score.tracks[0]], DEFAULT_MIDI_MAP);
     expect(Array.isArray(w)).toBe(true);
     for (const x of w) expect(x.kind).toBe('threeHandNotes');
   });
@@ -292,11 +297,178 @@ function oneBarScore(
   };
 }
 
+function withSecondTrack(score: ParsedGpScore, beats: BeatSpec[]): ParsedGpScore {
+  const second = oneBarScore(beats).tracks[0];
+  return { ...score, tracks: [...score.tracks, { ...second, id: 1, name: 'Auxiliary' }] };
+}
+
+describe('convertToYargChart — multiple tracks', () => {
+  it('preserves the single-track result when other tracks are present', () => {
+    const original = oneBarScore([{ notes: [{ midi: 36 }, { midi: 38 }] }]);
+    const combined = withSecondTrack(original, [{ notes: [{ midi: 42 }] }]);
+    expect(convertToYargChart(combined, [0], DEFAULT_MIDI_MAP)).toEqual(
+      convertToYargChart(original, [0], DEFAULT_MIDI_MAP),
+    );
+  });
+
+  it('combines notes in score order regardless of requested ID order', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 38 }] }]), [
+      { notes: [{ midi: 42 }] },
+    ]);
+    const first = convertToYargChart(s, [0, 1], DEFAULT_MIDI_MAP);
+    expect(first.chart.notes.map((note) => note.midi)).toEqual([38, 42]);
+    expect(convertToYargChart(s, [1, 0], DEFAULT_MIDI_MAP)).toEqual(first);
+    expect(convertToYargChart(s, [1, 0, 1], DEFAULT_MIDI_MAP)).toEqual(first);
+  });
+
+  it('processes score timing, sections, and direction signs once across repeated bars', () => {
+    const s = repeatWithTempos(2);
+    s.masterBars[0].section = 'Intro';
+    s.masterBars[1].section = 'Verse';
+    s.masterBars[1].timeSignature = { numerator: 3, denominator: 4 };
+    s.masterBars[0].hasDirections = true;
+    s.tracks.push({
+      id: 1,
+      name: 'Auxiliary',
+      isDrumKit: false,
+      noteCount: 2,
+      bars: [
+        oneBarScore([{ notes: [{ midi: 42 }] }]).tracks[0].bars[0],
+        oneBarScore([{ notes: [{ midi: 49 }] }]).tracks[0].bars[0],
+      ],
+    });
+    const single = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
+    const combined = convertToYargChart(s, [1, 0], DEFAULT_MIDI_MAP);
+    expect(combined.chart.tempoMap).toEqual(single.chart.tempoMap);
+    expect(combined.chart.timeSignatures).toEqual(single.chart.timeSignatures);
+    expect(combined.chart.sections).toEqual(single.chart.sections);
+    expect(combined.chart.endTick).toBe(single.chart.endTick);
+    expect(combined.chart.notes.filter((note) => note.midi === 42)).toHaveLength(2);
+    expect(combined.chart.notes.filter((note) => note.midi === 49)).toHaveLength(2);
+    expect(
+      combined.warnings.filter((warning) => warning.kind === 'directionSignsUnsupported'),
+    ).toHaveLength(1);
+  });
+
+  it('merges a same-lane cross-track collision with the stronger dynamic', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 38 }] }]), [
+      { notes: [{ midi: 40, accent: true }] },
+    ]);
+    const { chart, warnings } = convertToYargChart(s, [0, 1], DEFAULT_MIDI_MAP);
+    expect(chart.notes).toHaveLength(1);
+    expect(chart.notes[0]).toMatchObject({ note: 'red', dynamic: 'accent' });
+    expect(warnings.filter((warning) => warning.kind === 'yargNoteCollision')).toHaveLength(1);
+  });
+
+  it('chooses dynamic cymbal lanes from the combined raw notes', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 51 }] }]), [
+      { notes: [{ midi: 55 }] },
+    ]);
+    const { chart, warnings } = convertToYargChart(s, [0, 1], DEFAULT_MIDI_MAP);
+    expect(chart.notes.find((note) => note.midi === 51)?.note).toBe('blueCymbal');
+    expect(chart.notes.find((note) => note.midi === 55)?.note).toBe('greenCymbal');
+    expect(warnings.some((warning) => warning.kind === 'yargNoteCollision')).toBe(false);
+  });
+
+  it('keeps grace runs local to each source voice', () => {
+    const s = withSecondTrack(
+      oneBarScore([
+        { notes: [], num: 1, den: 4 },
+        { notes: [{ midi: 38 }], grace: true },
+        { notes: [{ midi: 38 }], grace: true },
+        { notes: [{ midi: 38 }] },
+      ]),
+      [
+        { notes: [], num: 1, den: 4 },
+        { notes: [{ midi: 42 }], grace: true },
+        { notes: [{ midi: 42 }] },
+      ],
+    );
+    const { chart } = convertToYargChart(s, [0, 1], DEFAULT_MIDI_MAP);
+    const lead = chart.leadInTicks;
+    expect(chart.notes.filter((note) => note.midi === 38).map((note) => note.tick)).toEqual([
+      lead + 420,
+      lead + 450,
+      lead + 480,
+    ]);
+    expect(chart.notes.filter((note) => note.midi === 42).map((note) => note.tick)).toEqual([
+      lead + 450,
+      lead + 480,
+    ]);
+  });
+
+  it('feeds final chart validation with cross-track three-hand events', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 38 }, { midi: 42 }] }]), [
+      { notes: [{ midi: 51 }] },
+    ]);
+    const { chart } = convertToYargChart(s, [0, 1], DEFAULT_MIDI_MAP);
+    expect(detectChartErrors(chart.notes).some((error) => error.kind === 'threeHandNotes')).toBe(
+      true,
+    );
+  });
+
+  it('feeds final chart validation with cross-track cymbal and tom conflicts', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 48 }] }]), [
+      { notes: [{ midi: 42 }] },
+    ]);
+    const { chart } = convertToYargChart(s, [0, 1], DEFAULT_MIDI_MAP);
+    expect(
+      detectChartErrors(chart.notes).some((error) => error.kind === 'cymbalPadCollision'),
+    ).toBe(true);
+  });
+
+  it('collects unmapped MIDI values from every selected track in one warning', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 38 }, { midi: 100 }] }]), [
+      { notes: [{ midi: 42 }, { midi: 101 }] },
+    ]);
+    const { warnings } = convertToYargChart(s, [0, 1], DEFAULT_MIDI_MAP);
+    const dropped = warnings.filter((warning) => warning.kind === 'unmappedNotesDropped');
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0].context).toEqual({ midi: [100, 101] });
+  });
+
+  it('reconverts a changed MIDI map using both source tracks', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 38 }] }]), [
+      { notes: [{ midi: 42 }] },
+    ]);
+    const remapped = {
+      ...DEFAULT_MIDI_MAP,
+      yellowCymbal: DEFAULT_MIDI_MAP.yellowCymbal.filter((midi) => midi !== 42),
+      greenTom: [...DEFAULT_MIDI_MAP.greenTom, 42],
+    };
+    const chart = convertToYargChart(s, [0, 1], remapped).chart;
+    expect(chart.notes.map((note) => [note.midi, note.note])).toEqual([
+      [38, 'red'],
+      [42, 'greenTom'],
+    ]);
+  });
+
+  it('rejects empty and missing selections with ConversionError', () => {
+    const s = oneBarScore([{ notes: [{ midi: 38 }] }]);
+    expect(() => convertToYargChart(s, [], DEFAULT_MIDI_MAP)).toThrow(ConversionError);
+    expect(() => convertToYargChart(s, [0, 99], DEFAULT_MIDI_MAP)).toThrow(ConversionError);
+  });
+
+  it('uses plural no-output wording and carries every selected ID in error context', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 100 }] }]), [
+      { notes: [{ midi: 101 }] },
+    ]);
+    try {
+      convertToYargChart(s, [0, 1], DEFAULT_MIDI_MAP);
+      throw new Error('Expected conversion to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConversionError);
+      expect((error as ConversionError).message).toMatch(/selected tracks/);
+      expect((error as ConversionError).context?.trackIds).toEqual([0, 1]);
+    }
+  });
+});
+
 describe('convertToYargChart — same-YARG-note collision', () => {
   it('merges two MIDI notes landing on one YARG note/tick, keeping the stronger dynamic', () => {
     // 31 and 40 both map to red in the default map; stack them on one beat.
     const s = oneBarScore([{ notes: [{ midi: 31 }, { midi: 40, accent: true }] }]);
-    const { chart, warnings } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart, warnings } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     const red = chart.notes.filter((n) => n.note === 'red');
     expect(red).toHaveLength(1); // merged to one note, not two stacked at the same tick
     expect(red[0].dynamic).toBe('accent'); // accent (rank 2) wins over neutral (rank 1)
@@ -308,7 +480,7 @@ describe('convertToYargChart — same-YARG-note collision', () => {
   it('keeps neutral over ghost when merging a collision', () => {
     // 38 and 40 both map to red; 38 is a pad ghost (kept as ghost), 40 neutral.
     const s = oneBarScore([{ notes: [{ midi: 38, ghost: true }, { midi: 40 }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     const red = chart.notes.filter((n) => n.note === 'red');
     expect(red).toHaveLength(1);
     expect(red[0].dynamic).toBe('neutral'); // neutral (rank 1) wins over ghost (rank 0)
@@ -326,7 +498,7 @@ describe('convertToYargChart — warning paths', () => {
       redAccented: [38],
     };
     const s = oneBarScore([{ notes: [{ midi: 38, ghost: true }] }]);
-    const { chart, warnings } = convertToYargChart(s, 0, map);
+    const { chart, warnings } = convertToYargChart(s, [0], map);
     expect(chart.notes.find((n) => n.note === 'red')?.dynamic).toBe('accent');
     expect(warnings).toHaveLength(0);
   });
@@ -377,7 +549,7 @@ describe('convertToYargChart — warning paths', () => {
         { id: 0, name: 'Drums', isDrumKit: true, noteCount: 2, bars: [kickBar(), kickBar()] },
       ],
     };
-    const { chart, warnings } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart, warnings } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     // The ramp from the first bar (120 BPM, tick 3840 after the 2-bar lead-in) to
     // the second (240 BPM, tick 5760) becomes many steps.
     expect(chart.tempoMap.filter((e) => e.tick >= 3840 && e.tick < 5760).length).toBeGreaterThan(1);
@@ -392,7 +564,7 @@ describe('convertToYargChart — warning paths', () => {
 
   it('warns (directionSignsUnsupported) when the score uses direction signs', () => {
     const s = oneBarScore([{ notes: [{ midi: 36 }] }], { hasDirections: true });
-    const { warnings } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { warnings } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(warnings.some((w) => w.kind === 'directionSignsUnsupported')).toBe(true);
   });
 });
@@ -401,7 +573,7 @@ describe('convertToYargChart — ghost-note toggles', () => {
   const ghostOn = (note: 'red' | 'yellowTom' | 'yellowCymbal', settings: ConversionSettings) => {
     const midi = { red: 38, yellowTom: 48, yellowCymbal: 42 }[note];
     const s = oneBarScore([{ notes: [{ midi, ghost: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, settings);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, settings);
     return chart.notes.find((n) => n.note === note)?.dynamic;
   };
 
@@ -435,7 +607,7 @@ describe('convertToYargChart — ghost-note toggles', () => {
 
   it('leaves a ghosted kick neutral regardless of the toggles', () => {
     const s = oneBarScore([{ notes: [{ midi: 36, ghost: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, {
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, {
       ...DEFAULT_CONVERSION_SETTINGS,
       snareGhostNotes: true,
       tomGhostNotes: true,
@@ -449,7 +621,7 @@ describe('convertToYargChart — accent-note toggles', () => {
   const accentOn = (note: 'red' | 'yellowTom' | 'greenCymbal', settings: ConversionSettings) => {
     const midi = { red: 38, yellowTom: 48, greenCymbal: 52 }[note];
     const s = oneBarScore([{ notes: [{ midi, accent: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, settings);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, settings);
     return chart.notes.find((n) => n.note === note)?.dynamic;
   };
 
@@ -480,7 +652,7 @@ describe('convertToYargChart — accent-note toggles', () => {
     // 91 lives in redAccented (row identity, no GP accent). snareAccentedNotes off
     // must NOT de-accent it.
     const s = oneBarScore([{ notes: [{ midi: 91 }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, {
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, {
       ...DEFAULT_CONVERSION_SETTINGS,
       snareAccentedNotes: false,
     });
@@ -492,7 +664,7 @@ describe('detectOverlaps — three hand notes', () => {
   it('warns when three non-kick notes share a beat', () => {
     // snare(38) + hi-hat(42) + ride(49): three hand notes on one beat.
     const s = oneBarScore([{ notes: [{ midi: 38 }, { midi: 42 }, { midi: 49 }] }]);
-    const w = detectOverlaps(s.tracks[0], DEFAULT_MIDI_MAP);
+    const w = detectOverlaps([s.tracks[0]], DEFAULT_MIDI_MAP);
     expect(w).toHaveLength(1);
     expect(w[0].kind).toBe('threeHandNotes');
     expect((w[0].context as { bar: number }).bar).toBe(1);
@@ -501,7 +673,101 @@ describe('detectOverlaps — three hand notes', () => {
   it('does not warn when a kick shares the beat with only two hand notes', () => {
     // kick(36) + snare(38) + hi-hat(42): the kick is not a hand note.
     const s = oneBarScore([{ notes: [{ midi: 36 }, { midi: 38 }, { midi: 42 }] }]);
-    expect(detectOverlaps(s.tracks[0], DEFAULT_MIDI_MAP)).toHaveLength(0);
+    expect(detectOverlaps([s.tracks[0]], DEFAULT_MIDI_MAP)).toHaveLength(0);
+  });
+
+  it('does not count a grace snare with the following primary hi-hat and ride', () => {
+    const s = oneBarScore([
+      { notes: [{ midi: 38 }], grace: true },
+      { notes: [{ midi: 42 }, { midi: 51 }] },
+    ]);
+    expect(detectOverlaps(s.tracks, DEFAULT_MIDI_MAP)).toHaveLength(0);
+  });
+
+  it('finds hand notes from different tracks at the same effective grace tick', () => {
+    const s = withSecondTrack(
+      oneBarScore([{ notes: [{ midi: 38 }, { midi: 42 }], grace: true }, { notes: [] }]),
+      [{ notes: [{ midi: 51 }], grace: true }, { notes: [] }],
+    );
+    const warnings = detectOverlaps(s.tracks, DEFAULT_MIDI_MAP);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].context).toMatchObject({ midi: [38, 42, 51], positionFrac: [-1, 64] });
+  });
+
+  it('spaces consecutive graces in reading order', () => {
+    const s = withSecondTrack(
+      oneBarScore([
+        { notes: [], num: 1, den: 4 },
+        { notes: [{ midi: 38 }], grace: true },
+        { notes: [{ midi: 42 }], grace: true },
+        { notes: [] },
+      ]),
+      [
+        { notes: [], num: 1, den: 8 },
+        { notes: [], num: 1, den: 16 },
+        { notes: [], num: 1, den: 32 },
+        { notes: [{ midi: 51 }, { midi: 49 }] },
+      ],
+    );
+    const warnings = detectOverlaps(s.tracks, DEFAULT_MIDI_MAP);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].context).toMatchObject({ midi: [38, 51, 49], positionFrac: [7, 32] });
+  });
+
+  it('uses the selected grace spacing when comparing grace and primary positions', () => {
+    const s = withSecondTrack(
+      oneBarScore([
+        { notes: [], num: 1, den: 4 },
+        { notes: [{ midi: 38 }], grace: true },
+        { notes: [] },
+      ]),
+      [
+        { notes: [], num: 1, den: 8 },
+        { notes: [], num: 1, den: 16 },
+        { notes: [], num: 1, den: 32 },
+        { notes: [{ midi: 42 }, { midi: 51 }] },
+      ],
+    );
+    expect(detectOverlaps(s.tracks, DEFAULT_MIDI_MAP, '64th')).toHaveLength(0);
+    expect(detectOverlaps(s.tracks, DEFAULT_MIDI_MAP, '32nd')).toHaveLength(1);
+  });
+
+  it('finds three hands across tracks at the same musical position', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 38 }, { midi: 42 }] }]), [
+      { notes: [{ midi: 49 }] },
+    ]);
+    const warnings = detectOverlaps(s.tracks, DEFAULT_MIDI_MAP);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].context).toMatchObject({ bar: 1, midi: [38, 42, 49], positionFrac: [0, 1] });
+  });
+
+  it('excludes kicks from cross-track hand counts', () => {
+    const s = withSecondTrack(oneBarScore([{ notes: [{ midi: 36 }, { midi: 38 }] }]), [
+      { notes: [{ midi: 42 }] },
+    ]);
+    expect(detectOverlaps(s.tracks, DEFAULT_MIDI_MAP)).toHaveLength(0);
+  });
+
+  it('matches positions even when tracks use different beat-array indices', () => {
+    const s = withSecondTrack(
+      oneBarScore([
+        { notes: [], num: 1, den: 8 },
+        { notes: [], num: 1, den: 8 },
+        { notes: [{ midi: 38 }, { midi: 42 }] },
+      ]),
+      [{ notes: [], num: 1, den: 4 }, { notes: [{ midi: 49 }] }],
+    );
+    const warnings = detectOverlaps(s.tracks, DEFAULT_MIDI_MAP);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].context).toMatchObject({ positionFrac: [1, 4], midi: [38, 42, 49] });
+  });
+
+  it('does not combine matching beat indices at different positions', () => {
+    const s = withSecondTrack(
+      oneBarScore([{ notes: [], num: 1, den: 8 }, { notes: [{ midi: 38 }, { midi: 42 }] }]),
+      [{ notes: [], num: 1, den: 4 }, { notes: [{ midi: 49 }] }],
+    );
+    expect(detectOverlaps(s.tracks, DEFAULT_MIDI_MAP)).toHaveLength(0);
   });
 });
 
@@ -516,7 +782,7 @@ describe('convertToYargChart — grace notes (flam placement)', () => {
       { notes: [{ midi: 38 }], grace: true }, // grace snare
       { notes: [{ midi: 38 }] }, // primary snare on beat 2
     ]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     const reds = chart.notes.filter((n) => n.note === 'red').sort((a, b) => a.tick - b.tick);
     expect(reds).toHaveLength(2); // grace survives as its own note
     expect(reds[0]).toMatchObject({ tick: LEAD + 450, dynamic: 'ghost' }); // 480 − 30 (a 64th)
@@ -530,7 +796,7 @@ describe('convertToYargChart — grace notes (flam placement)', () => {
       { notes: [{ midi: 38 }], grace: true }, // grace 2 (nearer the beat)
       { notes: [{ midi: 38 }] }, // primary snare on beat 2 (tick 480)
     ]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     const reds = chart.notes.filter((n) => n.note === 'red').sort((a, b) => a.tick - b.tick);
     expect(reds.map((n) => n.tick)).toEqual([LEAD + 420, LEAD + 450, LEAD + 480]); // 480−60, 480−30, 480
     expect(reds[0].dynamic).toBe('ghost');
@@ -543,7 +809,7 @@ describe('convertToYargChart — grace notes (flam placement)', () => {
       { notes: [{ midi: 38 }], grace: true },
       { notes: [{ midi: 38 }] },
     ]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, {
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, {
       ...DEFAULT_CONVERSION_SETTINGS,
       graceNoteSpacing: '32nd',
     });
@@ -559,13 +825,13 @@ describe('convertToYargChart — strict accented yellow/blue cymbals (checkbox o
 
   it('does not accent a GP-accented closed hi-hat (42 stays a neutral yellow cymbal)', () => {
     const s = oneBarScore([{ notes: [{ midi: 42, accent: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(chart.notes.find((n) => n.note === 'yellowCymbal')?.dynamic).toBe('neutral');
   });
 
   it('accents open hi-hat (46) and half hi-hat (92) via their row, without a GP accent', () => {
     const s = oneBarScore([{ notes: [{ midi: 46 }] }, { notes: [{ midi: 92 }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     const yellow = chart.notes.filter((n) => n.note === 'yellowCymbal');
     expect(yellow).toHaveLength(2);
     for (const n of yellow) expect(n.dynamic).toBe('accent');
@@ -573,13 +839,13 @@ describe('convertToYargChart — strict accented yellow/blue cymbals (checkbox o
 
   it('does not accent a GP-accented ride middle (51 stays a neutral blue cymbal)', () => {
     const s = oneBarScore([{ notes: [{ midi: 51, accent: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(chart.notes.find((n) => n.note === 'blueCymbal')?.dynamic).toBe('neutral');
   });
 
   it('accents ride bell (53, 127) via their row, without a GP accent', () => {
     const s = oneBarScore([{ notes: [{ midi: 53 }] }, { notes: [{ midi: 127 }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     const blue = chart.notes.filter((n) => n.note === 'blueCymbal');
     expect(blue).toHaveLength(2);
     for (const n of blue) expect(n.dynamic).toBe('accent');
@@ -587,7 +853,7 @@ describe('convertToYargChart — strict accented yellow/blue cymbals (checkbox o
 
   it('still accents a GP-accented green cymbal (china 52) — green is not suppressed, and promotes once cymbal accents are enabled', () => {
     const s = oneBarScore([{ notes: [{ midi: 52, accent: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, {
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, {
       ...DEFAULT_CONVERSION_SETTINGS,
       cymbalAccentedNotes: true,
     });
@@ -596,7 +862,7 @@ describe('convertToYargChart — strict accented yellow/blue cymbals (checkbox o
 
   it('still accents a GP-accented snare (38) — pads are not suppressed', () => {
     const s = oneBarScore([{ notes: [{ midi: 38, accent: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(chart.notes.find((n) => n.note === 'red')?.dynamic).toBe('accent');
   });
 
@@ -605,7 +871,7 @@ describe('convertToYargChart — strict accented yellow/blue cymbals (checkbox o
     // and because the note is a ghost and cymbal ghosts are enabled it resolves to
     // ghost (not neutral) — the ghost path is unaffected by suppression.
     const s = oneBarScore([{ notes: [{ midi: 42, accent: true, ghost: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, {
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, {
       ...DEFAULT_CONVERSION_SETTINGS,
       snareGhostNotes: true,
       cymbalGhostNotes: true,
@@ -618,7 +884,7 @@ describe('convertToYargChart — accented cymbals when the checkbox is off', () 
   it('promotes a GP-accented closed hi-hat to an accent yellow cymbal (union rule holds)', () => {
     const off = setRideBellAndHiHatAccented(DEFAULT_MIDI_MAP, false);
     const s = oneBarScore([{ notes: [{ midi: 42, accent: true }] }]);
-    const { chart } = convertToYargChart(s, 0, off, {
+    const { chart } = convertToYargChart(s, [0], off, {
       ...DEFAULT_CONVERSION_SETTINGS,
       cymbalAccentedNotes: true,
     });
@@ -629,7 +895,7 @@ describe('convertToYargChart — accented cymbals when the checkbox is off', () 
 describe('convertToYargChart — settings object', () => {
   it('honors ghost toggles passed as a settings object', () => {
     const s = oneBarScore([{ notes: [{ midi: 38, ghost: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, {
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, {
       ...DEFAULT_CONVERSION_SETTINGS,
       snareGhostNotes: false,
     });
@@ -638,7 +904,7 @@ describe('convertToYargChart — settings object', () => {
 
   it('defaults to the shipped conversion settings when none are passed', () => {
     const s = oneBarScore([{ notes: [{ midi: 38, ghost: true }] }]);
-    const { chart } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(chart.notes.find((n) => n.note === 'red')?.dynamic).toBe('ghost');
   });
 });
@@ -647,7 +913,7 @@ describe('convertToYargChart — dynamic cymbal selection', () => {
   it('spreads an overlapping accent cymbal onto a free lane by default', () => {
     // 51 ride middle (fixed blue) + 55 splash (pref blue) on one beat → splash green.
     const s = oneBarScore([{ notes: [{ midi: 51 }, { midi: 55 }] }]);
-    const { chart, warnings } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP);
+    const { chart, warnings } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP);
     expect(chart.notes.find((n) => n.midi === 51)?.note).toBe('blueCymbal');
     expect(chart.notes.find((n) => n.midi === 55)?.note).toBe('greenCymbal');
     expect(warnings.some((w) => w.kind === 'yargNoteCollision')).toBe(false);
@@ -655,7 +921,7 @@ describe('convertToYargChart — dynamic cymbal selection', () => {
 
   it('merges the same overlap when dynamic selection is off', () => {
     const s = oneBarScore([{ notes: [{ midi: 51 }, { midi: 55 }] }]);
-    const { chart, warnings } = convertToYargChart(s, 0, DEFAULT_MIDI_MAP, {
+    const { chart, warnings } = convertToYargChart(s, [0], DEFAULT_MIDI_MAP, {
       ...DEFAULT_CONVERSION_SETTINGS,
       dynamicCymbalSelection: false,
     });

@@ -1,5 +1,6 @@
 import { tickToSeconds } from '../convert/index';
 import {
+  type AlbumArt,
   SESSION_BLOB_FILENAME,
   type SessionBlob,
   SngWriteError,
@@ -22,6 +23,7 @@ export function writeSng(
   audio: { bytes: Uint8Array; extension: string } | undefined,
   offsetMs: number,
   session: SessionBlob,
+  albumArt?: AlbumArt,
 ): Uint8Array {
   if (metadata.name === '' || metadata.artist === '') {
     throw new SngWriteError('Song name and artist are required', {
@@ -34,6 +36,7 @@ export function writeSng(
     { name: 'notes.mid', bytes: buildMidi(chart) },
   ];
   if (audio) files.push({ name: `song.${audio.extension.toLowerCase()}`, bytes: audio.bytes });
+  if (albumArt) files.push({ name: `album.${albumArt.extension}`, bytes: albumArt.bytes });
   // The editing session, so this .sng can be reopened and edited later. YARG looks
   // files up by known name and never enumerates, so an unknown member is inert.
   files.push({ name: SESSION_BLOB_FILENAME, bytes: encodeSessionBlob(session) });
