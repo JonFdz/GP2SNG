@@ -1,23 +1,20 @@
 import { useState } from 'react';
 import { parseGp } from '../../../shared/gp/index';
 import { readSngSession } from '../../../shared/sng/index';
-import { detectDrumTrack } from '../state/detectDrumTrack';
 import { hasSectionNames } from '../state/hasSectionNames';
 import { useWizardStore } from '../state/wizardStore';
 
 // Load step (FUNCTIONALITY steps 2-7): pick a GP file, parse it, load it into the
-// wizard, then pick the drum track — all on one page (docs/DESIGN.md → Convert
-// tab). Parse failures and drum-track-less files surface as an inline error banner;
-// neither loads the score. Once loaded, the track list appears below the summary
-// with the auto-detected drum track pre-selected; a zero-note selection blocks Next.
+// wizard, then pick the tracks to combine — all on one page (docs/DESIGN.md →
+// Convert tab). Detected drum-kit tracks start selected; a selection containing
+// no notes blocks Next.
 export function LoadView() {
   const gpFilePath = useWizardStore((s) => s.gpFilePath);
   const score = useWizardStore((s) => s.score);
-  const selectedTrackId = useWizardStore((s) => s.selectedTrackId);
+  const selectedTrackIds = useWizardStore((s) => s.selectedTrackIds);
   const loadScore = useWizardStore((s) => s.loadScore);
   const restoreSession = useWizardStore((s) => s.restoreSession);
-  const selectTrack = useWizardStore((s) => s.selectTrack);
-  const reset = useWizardStore((s) => s.reset);
+  const toggleTrack = useWizardStore((s) => s.toggleTrack);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -28,13 +25,6 @@ export function LoadView() {
       const picked = await window.gp2sng.loadGpFile();
       if (picked === null) return; // user cancelled the dialog — silent
       const parsed = parseGp(picked.bytes);
-      if (detectDrumTrack(parsed.tracks) === null) {
-        // Unload any previously loaded score so a drum-less file leaves nothing
-        // stale behind the error (batch 4 §1).
-        reset();
-        setError('This file has no drum track. GP2SNG only converts files with a drum track.');
-        return;
-      }
       loadScore(picked.path, picked.bytes, parsed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The file could not be loaded.');
@@ -69,8 +59,9 @@ export function LoadView() {
   }
 
   const fileName = gpFilePath?.split(/[\\/]/).pop() ?? gpFilePath;
-  const selected = score?.tracks.find((t) => t.id === selectedTrackId);
-  const noteless = selected !== undefined && selected.noteCount === 0;
+  const noteless =
+    selectedTrackIds.length > 0 &&
+    !score?.tracks.some((track) => selectedTrackIds.includes(track.id) && track.noteCount > 0);
 
   return (
     <div>
@@ -78,7 +69,9 @@ export function LoadView() {
 
       <section className="settings-section">
         <div className="settings-label">Guitar Pro file</div>
-        <p className="view-hint">Select a .gp file to convert. Only its drum track is used.</p>
+        <p className="view-hint">
+          Select a .gp file, then choose tracks to combine into one drum chart.
+        </p>
         <button
           type="button"
           className={score ? 'btn' : 'btn btn--primary'}
@@ -124,21 +117,37 @@ export function LoadView() {
           )}
 
           <div className="track-select">
+            <div className="settings-label">Tracks to combine</div>
             <p className="view-hint">
-              GP2SNG picked the drum track with the most notes. Choose a different track if this is
-              wrong.
+              Select the tracks to combine into the drum chart. Detected drum tracks are selected
+              automatically.
             </p>
+
+            {!score.tracks.some((track) => track.isDrumKit) && (
+              <div className="warning-banner">
+                <span className="warning-icon">⚠</span>
+                <span className="warning-text">
+                  No drum tracks were detected automatically. Select the track or tracks that should
+                  be used for the drum chart.
+                </span>
+              </div>
+            )}
 
             <div className="track-list">
               {score.tracks.map((track) => (
-                <button
-                  type="button"
+                <label
                   key={track.id}
                   className={
-                    track.id === selectedTrackId ? 'track-row track-row--selected' : 'track-row'
+                    selectedTrackIds.includes(track.id)
+                      ? 'track-row track-row--selected'
+                      : 'track-row'
                   }
-                  onClick={() => selectTrack(track.id)}
                 >
+                  <input
+                    type="checkbox"
+                    checked={selectedTrackIds.includes(track.id)}
+                    onChange={() => toggleTrack(track.id)}
+                  />
                   <span className="track-row__name">{track.name || `Track ${track.id}`}</span>
                   <span className="track-row__meta">
                     {track.isDrumKit && <span className="track-tag">Drums</span>}
@@ -146,13 +155,17 @@ export function LoadView() {
                       {track.noteCount} note{track.noteCount === 1 ? '' : 's'}
                     </span>
                   </span>
-                </button>
+                </label>
               ))}
             </div>
 
+            {selectedTrackIds.length === 0 && (
+              <div className="error-banner">Select at least one track to continue.</div>
+            )}
+
             {noteless && (
               <div className="error-banner">
-                This track has no notes. Select a track that contains notes to continue.
+                The selected tracks have no notes. Select a track that contains notes to continue.
               </div>
             )}
           </div>

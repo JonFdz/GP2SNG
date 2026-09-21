@@ -9,7 +9,7 @@ const bytes = new Uint8Array(
   readFileSync(fileURLToPath(new URL('../../fixtures/example.gp', import.meta.url))),
 );
 const score = parseGp(bytes);
-const { chart } = convertToYargChart(score, 0, DEFAULT_MIDI_MAP);
+const { chart } = convertToYargChart(score, [0], DEFAULT_MIDI_MAP);
 
 describe('playedBars — alignment with barStartTicks', () => {
   // The chart converts with the default 2-bar lead-in, so playedBars must be

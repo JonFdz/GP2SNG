@@ -10,6 +10,7 @@ import {
   type ParsedGpTrack,
   SESSION_BLOB_VERSION,
   type SessionBlob,
+  SessionRestoreError,
   type YargChart,
 } from '../../../src/shared/types/index';
 
@@ -43,7 +44,7 @@ function blob(): SessionBlob {
     version: SESSION_BLOB_VERSION,
     gpFilePath: 'C:/songs/song.gp',
     gpBytes: GP_BYTES,
-    selectedTrackId: 3,
+    selectedTrackIds: [3],
     sessionMap: applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom'),
     // A non-default value so restoreSession is actually verified to carry the
     // blob's settings through, not just whatever the store's own DEFAULT_ is.
@@ -86,23 +87,49 @@ describe('wizardStore', () => {
     const s = useWizardStore.getState();
     expect(s.step).toBe('load');
     expect(s.score).toBeNull();
-    expect(s.selectedTrackId).toBeNull();
+    expect(s.selectedTrackIds).toEqual([]);
   });
 
-  test('loadScore stores the file and auto-selects the drum track with the most notes', () => {
+  test('loadScore stores the file and auto-selects all drum-kit tracks in score order', () => {
     const sc = score([track(0, false, 500), track(1, true, 10), track(2, true, 40)]);
     useWizardStore.getState().loadScore('C:/song.gp', GP_BYTES, sc);
     const s = useWizardStore.getState();
     expect(s.gpFilePath).toBe('C:/song.gp');
     expect(s.score).toBe(sc);
-    expect(s.selectedTrackId).toBe(2);
+    expect(s.selectedTrackIds).toEqual([1, 2]);
   });
 
-  test('selectTrack overrides the auto-selected track', () => {
+  test('toggleTrack removes an auto-selected track', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
     useWizardStore.getState().loadScore('C:/song.gp', GP_BYTES, sc);
-    useWizardStore.getState().selectTrack(1);
-    expect(useWizardStore.getState().selectedTrackId).toBe(1);
+    useWizardStore.getState().toggleTrack(1);
+    expect(useWizardStore.getState().selectedTrackIds).toEqual([0]);
+  });
+
+  test('a score without drum-kit tracks loads with no selection and supports manual selection', () => {
+    const sc = score([track(0, false, 5), track(1, false, 2)]);
+    useWizardStore.getState().loadScore('C:/song.gp', GP_BYTES, sc);
+    expect(useWizardStore.getState().score).toBe(sc);
+    expect(useWizardStore.getState().selectedTrackIds).toEqual([]);
+    useWizardStore.getState().toggleTrack(1);
+    expect(useWizardStore.getState().selectedTrackIds).toEqual([1]);
+  });
+
+  test('manual selection stays unique and in score order', () => {
+    useWizardStore
+      .getState()
+      .loadScore(
+        'a.gp',
+        GP_BYTES,
+        score([track(3, false, 1), track(1, false, 1), track(2, false, 1)]),
+      );
+    useWizardStore.getState().toggleTrack(2);
+    useWizardStore.getState().toggleTrack(3);
+    useWizardStore.getState().toggleTrack(1);
+    expect(useWizardStore.getState().selectedTrackIds).toEqual([3, 1, 2]);
+    useWizardStore.getState().toggleTrack(2);
+    useWizardStore.getState().toggleTrack(2);
+    expect(useWizardStore.getState().selectedTrackIds).toEqual([3, 1, 2]);
   });
 
   test('loading a different file resets forward wizard state', () => {
@@ -113,7 +140,7 @@ describe('wizardStore', () => {
     useWizardStore.getState().loadScore('b.gp', GP_BYTES, score([track(5, true, 12)]));
     const s = useWizardStore.getState();
     expect(s.step).toBe('load');
-    expect(s.selectedTrackId).toBe(5);
+    expect(s.selectedTrackIds).toEqual([5]);
   });
 
   test('goNext and goBack walk the wizard steps and clamp at the ends', () => {
@@ -147,7 +174,7 @@ describe('wizardStore', () => {
     expect(s.step).toBe('load');
     expect(s.gpFilePath).toBeNull();
     expect(s.score).toBeNull();
-    expect(s.selectedTrackId).toBeNull();
+    expect(s.selectedTrackIds).toEqual([]);
   });
 
   test('waveform visibility defaults on, survives Preview navigation, and resets', () => {
@@ -238,23 +265,39 @@ describe('wizardStore session map + conversion', () => {
     useWizardStore.getState().startSession(DEFAULT_MIDI_MAP, DEFAULT_CONVERSION_SETTINGS);
     useWizardStore.getState().setSessionMap(applyRemap(DEFAULT_MIDI_MAP, 51, 'yellowCymbal'));
     useWizardStore.getState().setConversion(emptyChart, []);
+    useWizardStore
+      .getState()
+      .setSessionSettings({ ...DEFAULT_CONVERSION_SETTINGS, graceNoteSpacing: '32nd' });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: false });
+    useWizardStore.getState().deleteNote({ tick: 0, midi: 42 });
+    useWizardStore
+      .getState()
+      .recordPreviewRemap({ midi: 38, from: 'red', to: 'blueTom', nextMap: DEFAULT_MIDI_MAP });
+    useWizardStore.getState().setViewTime(4);
 
-    useWizardStore.getState().selectTrack(1); // changed track
+    useWizardStore.getState().toggleTrack(1); // changed track
     const s = useWizardStore.getState();
     expect(s.sessionMap).toBeNull();
     expect(s.mapDirty).toBe(false);
+    expect(s.settingsDirty).toBe(false);
     expect(s.chart).toBeNull();
     expect(s.warnings).toEqual([]);
+    expect(s.overrides).toEqual([]);
+    expect(s.deletions).toEqual([]);
+    expect(s.previewRemaps).toEqual([]);
+    expect(s.viewTime).toBe(0);
+    expect(s.score).toBe(sc);
+    expect(s.gpFileBytes).toBe(GP_BYTES);
   });
 
-  test('reselecting the SAME track preserves the session and conversion', () => {
+  test('toggling an unknown track preserves the session and conversion', () => {
     const sc = score([track(0, true, 40)]);
     useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc); // auto-selects track 0
     useWizardStore.getState().startSession(DEFAULT_MIDI_MAP, DEFAULT_CONVERSION_SETTINGS);
     const edited = applyRemap(DEFAULT_MIDI_MAP, 51, 'yellowCymbal');
     useWizardStore.getState().setSessionMap(edited);
 
-    useWizardStore.getState().selectTrack(0); // same track
+    useWizardStore.getState().toggleTrack(99);
     const s = useWizardStore.getState();
     expect(s.sessionMap).toEqual(edited);
     expect(s.mapDirty).toBe(true);
@@ -412,7 +455,7 @@ describe('wizardStore preview state', () => {
     useWizardStore.getState().deleteNote({ tick: 4, midi: 40 });
     useWizardStore.getState().setViewTime(5);
 
-    useWizardStore.getState().selectTrack(1);
+    useWizardStore.getState().toggleTrack(1);
     const s = useWizardStore.getState();
     expect(s.overrides).toEqual([]);
     expect(s.deletions).toEqual([]);
@@ -457,14 +500,16 @@ describe('wizardStore preview state', () => {
 describe('canAdvance', () => {
   test('load requires a loaded score and a selected track with notes', () => {
     const sc = score([track(0, true, 10), track(1, true, 0)]);
-    expect(canAdvance('load', null, null)).toBe(false);
-    expect(canAdvance('load', sc, null)).toBe(false); // no track selected yet
-    expect(canAdvance('load', sc, 1)).toBe(false); // zero-note track blocks Next
-    expect(canAdvance('load', sc, 0)).toBe(true);
+    expect(canAdvance('load', null, [])).toBe(false);
+    expect(canAdvance('load', sc, [])).toBe(false); // no track selected yet
+    expect(canAdvance('load', sc, [1])).toBe(false); // zero-note track blocks Next
+    expect(canAdvance('load', sc, [0])).toBe(true);
+    expect(canAdvance('load', sc, [1, 0])).toBe(true);
+    expect(canAdvance('load', sc, [99])).toBe(false);
   });
 
   test('preview can always advance to finalize', () => {
-    expect(canAdvance('preview', null, null)).toBe(true);
+    expect(canAdvance('preview', null, [])).toBe(true);
   });
 });
 
@@ -539,7 +584,7 @@ describe('wizardStore action-log edits', () => {
     expect(useWizardStore.getState().sessionMap).toBe(revert);
   });
 
-  test('previewRemaps clear on setSessionMap, selectTrack, and reset', () => {
+  test('previewRemaps clear on setSessionMap, toggleTrack, and reset', () => {
     const map1 = applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom');
     const record = () =>
       useWizardStore
@@ -551,7 +596,9 @@ describe('wizardStore action-log edits', () => {
     expect(useWizardStore.getState().previewRemaps).toEqual([]);
 
     record();
-    useWizardStore.getState().selectTrack(99);
+    useWizardStore.getState().loadScore('a.gp', GP_BYTES, score([track(0, true, 1)]));
+    record();
+    useWizardStore.getState().toggleTrack(0);
     expect(useWizardStore.getState().previewRemaps).toEqual([]);
 
     record();
@@ -613,7 +660,7 @@ describe('sessionSettings', () => {
     expect(useWizardStore.getState().settingsDirty).toBe(true);
   });
 
-  test('selectTrack with a different id clears settingsDirty', () => {
+  test('toggleTrack with a different id clears settingsDirty', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
     useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc);
     useWizardStore.getState().startSession(DEFAULT_MIDI_MAP, DEFAULT_CONVERSION_SETTINGS);
@@ -622,7 +669,7 @@ describe('sessionSettings', () => {
       .setSessionSettings({ ...DEFAULT_CONVERSION_SETTINGS, graceNoteSpacing: '32nd' });
     expect(useWizardStore.getState().settingsDirty).toBe(true);
 
-    useWizardStore.getState().selectTrack(1);
+    useWizardStore.getState().toggleTrack(1);
     expect(useWizardStore.getState().settingsDirty).toBe(false);
   });
 });
@@ -634,7 +681,7 @@ describe('restoreSession', () => {
     expect(s.step).toBe('preview');
     expect(s.gpFilePath).toBe('C:/songs/song.gp');
     expect(Array.from(s.gpFileBytes ?? [])).toEqual(Array.from(GP_BYTES));
-    expect(s.selectedTrackId).toBe(3);
+    expect(s.selectedTrackIds).toEqual([3]);
     expect(s.chart).toEqual(restoredChart);
     expect(s.overrides).toEqual(blob().overrides);
     expect(s.deletions).toEqual(blob().deletions);
@@ -669,8 +716,36 @@ describe('restoreSession', () => {
     restore();
     const s = useWizardStore.getState();
     expect(s.gpFilePath).toBe('C:/songs/song.gp');
-    expect(s.selectedTrackId).toBe(3);
+    expect(s.selectedTrackIds).toEqual([3]);
     expect(s.step).toBe('preview');
+  });
+
+  test('restores multiple tracks and preserves selection when returning to Load', () => {
+    const sc = score([track(3, true, 40), track(4, false, 5)]);
+    useWizardStore.getState().restoreSession({
+      gpFilePath: 'song.gp',
+      gpFileBytes: GP_BYTES,
+      score: sc,
+      blob: { ...blob(), selectedTrackIds: [3, 4] },
+      audioBytes: new Uint8Array([1]),
+    });
+    useWizardStore.getState().goToStep('load');
+    expect(useWizardStore.getState().selectedTrackIds).toEqual([3, 4]);
+    useWizardStore.getState().toggleTrack(4);
+    expect(useWizardStore.getState().selectedTrackIds).toEqual([3]);
+    expect(useWizardStore.getState().chart).toBeNull();
+  });
+
+  test('refuses a restored selection absent from the embedded score', () => {
+    expect(() =>
+      useWizardStore.getState().restoreSession({
+        gpFilePath: 'song.gp',
+        gpFileBytes: GP_BYTES,
+        score: score([track(3, true, 40)]),
+        blob: { ...blob(), selectedTrackIds: [3, 9] },
+        audioBytes: new Uint8Array([1]),
+      }),
+    ).toThrow(SessionRestoreError);
   });
 });
 

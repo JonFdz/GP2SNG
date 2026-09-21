@@ -79,39 +79,70 @@ function resolveDynamic(
   return 'neutral';
 }
 
-export function detectOverlaps(track: ParsedGpTrack, map: MidiMap): ConversionWarning[] {
+export function detectOverlaps(
+  tracks: readonly ParsedGpTrack[],
+  map: MidiMap,
+  graceNoteSpacing: GraceNoteSpacing = DEFAULT_CONVERSION_SETTINGS.graceNoteSpacing,
+): ConversionWarning[] {
   const warnings: ConversionWarning[] = [];
-  track.bars.forEach((bar, barIdx) => {
-    for (const voice of bar.voices) {
-      // Beat position within the bar (whole-note fraction), mirroring the played
-      // loop in convertToYargChart so the warning resolves to the exact beat tick,
-      // not the bar start. Grace beats carry no grid time and render just before
-      // the next primary beat, so they anchor to the current pos without advancing
-      // it — matching the flam placement there.
-      let pos: Frac = [0, 1];
-      for (const beat of voice.beats) {
-        const hands = beat.notes.filter((n) => {
-          const r = lookup(map, n.midi);
-          return r !== null && r.note !== 'orange';
-        });
-        if (hands.length >= 3) {
-          const midis = hands.map((n) => n.midi);
-          warnings.push({
-            kind: 'threeHandNotes',
-            message: `MIDI notes ${midis.join(', ')} overlap on bar ${barIdx + 1}`,
-            context: { bar: barIdx + 1, midi: midis, positionFrac: pos },
+  const positions = new Map<string, { bar: number; positionFrac: Frac; midi: number[] }>();
+  const graceTicks = fracToTick(GRACE_SPACING_FRACTION[graceNoteSpacing], CHART_RESOLUTION);
+  for (const track of tracks)
+    track.bars.forEach((bar, barIdx) => {
+      for (const voice of bar.voices) {
+        let pos: Frac = [0, 1];
+        let graceRun: GpBeat[] = [];
+        const recordAt = (beat: GpBeat, tick: number, positionFrac: Frac) => {
+          const hands = beat.notes.filter((n) => {
+            const r = lookup(map, n.midi);
+            return r !== null && r.note !== 'orange';
           });
+          if (hands.length === 0) return;
+          const key = `${barIdx}:${tick}`;
+          const group = positions.get(key);
+          if (group) group.midi.push(...hands.map((n) => n.midi));
+          else
+            positions.set(key, {
+              bar: barIdx + 1,
+              positionFrac,
+              midi: hands.map((n) => n.midi),
+            });
+        };
+        const flushGraces = (anchorTick: number) => {
+          const k = graceRun.length;
+          graceRun.forEach((beat, i) => {
+            const offset = (k - i) * graceTicks;
+            recordAt(beat, anchorTick - offset, addFrac(pos, [-offset, 4 * CHART_RESOLUTION]));
+          });
+          graceRun = [];
+        };
+        for (const beat of voice.beats) {
+          if (beat.isGrace) {
+            graceRun.push(beat);
+            continue;
+          }
+          const beatTick = fracToTick(pos, CHART_RESOLUTION);
+          flushGraces(beatTick);
+          recordAt(beat, beatTick, pos);
+          pos = addFrac(pos, [beat.durationNum, beat.durationDen]);
         }
-        if (!beat.isGrace) pos = addFrac(pos, [beat.durationNum, beat.durationDen]);
+        flushGraces(fracToTick(pos, CHART_RESOLUTION));
       }
-    }
-  });
+    });
+  for (const { bar, positionFrac, midi } of positions.values()) {
+    if (midi.length < 3) continue;
+    warnings.push({
+      kind: 'threeHandNotes',
+      message: `MIDI notes ${midi.join(', ')} overlap on bar ${bar}`,
+      context: { bar, midi, positionFrac },
+    });
+  }
   return warnings;
 }
 
 export function convertToYargChart(
   score: ParsedGpScore,
-  trackId: number,
+  trackIds: readonly number[],
   map: MidiMap,
   settings: ConversionSettings = DEFAULT_CONVERSION_SETTINGS,
 ): { chart: YargChart; warnings: ConversionWarning[] } {
@@ -126,8 +157,13 @@ export function convertToYargChart(
     dynamicCymbalSelection,
     cymbalPriorities,
   } = settings;
-  const track = score.tracks.find((t) => t.id === trackId);
-  if (!track) throw new ConversionError(`No track with id ${trackId}`, { trackId });
+  if (trackIds.length === 0) throw new ConversionError('No tracks selected', { trackIds });
+  const requested = new Set(trackIds);
+  const tracks = score.tracks.filter((track) => requested.has(track.id));
+  if (tracks.length !== requested.size) {
+    const missing = [...requested].filter((id) => !tracks.some((track) => track.id === id));
+    throw new ConversionError(`No track with id ${missing.join(', ')}`, { trackIds, missing });
+  }
 
   const ppq = CHART_RESOLUTION;
   const graceTicks = fracToTick(GRACE_SPACING_FRACTION[graceNoteSpacing], ppq);
@@ -211,8 +247,9 @@ export function convertToYargChart(
       emittedSection.add(masterIndex);
     }
 
-    const gpBar = track.bars[masterIndex];
-    if (gpBar) {
+    for (const track of tracks) {
+      const gpBar = track.bars[masterIndex];
+      if (!gpBar) continue;
       for (const voice of gpBar.voices) {
         let pos: Frac = [0, 1];
         // Grace notes carry no grid time; they render as a flam just before the
@@ -283,7 +320,9 @@ export function convertToYargChart(
   notes.sort((a, b) => a.tick - b.tick);
 
   if (notes.length === 0) {
-    throw new ConversionError('No MIDI notes in the track map to any YARG note', { trackId });
+    throw new ConversionError('No MIDI notes in the selected tracks map to any YARG note', {
+      trackIds,
+    });
   }
 
   if (droppedMidi.size > 0) {

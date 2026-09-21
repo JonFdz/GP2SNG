@@ -24,12 +24,12 @@ function track(...bars: GpBeat[][]): ParsedGpTrack {
 describe('trackMidiNumbers', () => {
   test('collects distinct MIDI numbers across bars, sorted ascending', () => {
     const t = track([beat(38, 42), beat(36)], [beat(42, 46)]);
-    expect(trackMidiNumbers(t)).toEqual([36, 38, 42, 46]);
+    expect(trackMidiNumbers([t])).toEqual([36, 38, 42, 46]);
   });
 
   test('returns an empty array for a track with no notes', () => {
-    expect(trackMidiNumbers(track([beat()]))).toEqual([]);
-    expect(trackMidiNumbers(track())).toEqual([]);
+    expect(trackMidiNumbers([track([beat()])])).toEqual([]);
+    expect(trackMidiNumbers([track()])).toEqual([]);
   });
 
   test('gathers numbers from every voice in a bar', () => {
@@ -40,6 +40,12 @@ describe('trackMidiNumbers', () => {
       noteCount: 0,
       bars: [{ voices: [{ beats: [beat(38)] }, { beats: [beat(36, 42)] }] }],
     };
-    expect(trackMidiNumbers(t)).toEqual([36, 38, 42]);
+    expect(trackMidiNumbers([t])).toEqual([36, 38, 42]);
+  });
+
+  test('unions MIDI numbers across tracks without duplicates', () => {
+    expect(trackMidiNumbers([track([beat(36, 38, 42)]), track([beat(38, 51, 55)])])).toEqual([
+      36, 38, 42, 51, 55,
+    ]);
   });
 });

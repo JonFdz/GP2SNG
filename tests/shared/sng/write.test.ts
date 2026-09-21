@@ -35,7 +35,7 @@ function session(): SessionBlob {
     version: SESSION_BLOB_VERSION,
     gpFilePath: 'C:/songs/song.gp',
     gpBytes: new Uint8Array([1, 2, 3]),
-    selectedTrackId: 0,
+    selectedTrackIds: [0],
     sessionMap: DEFAULT_MIDI_MAP,
     sessionSettings: DEFAULT_CONVERSION_SETTINGS,
     chart,
