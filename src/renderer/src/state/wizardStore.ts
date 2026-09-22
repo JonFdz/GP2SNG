@@ -26,7 +26,6 @@ import { detectDrumTracks } from './detectDrumTracks';
 import { reopenedOutputFilenameOverride } from './outputFilename';
 import { deriveTempoScale, scaleChartTempo } from './tempoCorrection';
 
-
 // Default highway scroll speed in px/s (docs/DESIGN.md → Highway scroll speed):
 // a view-only preference, not persisted.
 const DEFAULT_PIXELS_PER_SECOND = 700;

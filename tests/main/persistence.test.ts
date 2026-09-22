@@ -1,10 +1,11 @@
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   readGlobalMap,
   readSettings,
+  resolveDataDir,
   writeGlobalMap,
   writeSettings,
 } from '../../src/main/persistence';
@@ -19,6 +20,27 @@ import {
 function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'gp2sng-persist-'));
 }
+
+describe('resolveDataDir', () => {
+  it('keeps development data in the existing project-local directory', () => {
+    expect(resolveDataDir(false, 'darwin', '/ignored')).toBe(join(process.cwd(), 'dev-data'));
+  });
+
+  it('uses the per-user application data directory for a packaged macOS app', () => {
+    const userDataDir = join('/Users', 'test', 'Library', 'Application Support', 'GP2SNG');
+    expect(resolveDataDir(true, 'darwin', userDataDir)).toBe(join(userDataDir, 'gp2sng-data'));
+  });
+
+  it('requires Electron to provide the macOS user data directory', () => {
+    expect(() => resolveDataDir(true, 'darwin')).toThrow(/user data directory/);
+  });
+
+  it('preserves the existing executable-adjacent location on packaged Windows', () => {
+    expect(resolveDataDir(true, 'win32', '/ignored')).toBe(
+      join(dirname(process.execPath), 'gp2sng-data'),
+    );
+  });
+});
 
 describe('readSettings / readGlobalMap — absent files', () => {
   it('returns defaults with no failure when files are absent', async () => {

@@ -1,0 +1,110 @@
+name: Build artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+
+  windows:
+    name: Windows portable
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run dist:win
+      - name: Verify portable artifact
+        shell: pwsh
+        run: |
+          $artifacts = @(Get-ChildItem dist/GP2SNG-*-portable.exe)
+          if ($artifacts.Count -ne 1 -or $artifacts[0].Length -eq 0) {
+            throw "Expected one non-empty Windows portable artifact"
+          }
+          foreach ($path in @(
+            "dist/win-unpacked/resources/LICENSE.txt",
+            "dist/win-unpacked/resources/DISTRIBUTION_NOTICES.txt",
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/Inter.txt"
+          )) {
+            if (-not (Test-Path $path)) { throw "Missing packaged compliance file: $path" }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GP2SNG-windows-portable
+          path: |
+            dist/GP2SNG-*-portable.exe
+            LICENSE
+            DISTRIBUTION_NOTICES.txt
+            THIRD_PARTY_LICENSES/
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            command: dist:mac:arm64
+            unpacked: mac-arm64
+          - arch: x64
+            runner: macos-15-intel
+            command: dist:mac:x64
+            unpacked: mac
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run ${{ matrix.command }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Verify macOS artifacts
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          test -s "dist/GP2SNG-${version}-${{ matrix.arch }}.dmg"
+          test -s "dist/GP2SNG-${version}-${{ matrix.arch }}-mac.zip"
+          resources="dist/${{ matrix.unpacked }}/GP2SNG.app/Contents/Resources"
+          test -f "$resources/LICENSE.txt"
+          test -f "$resources/DISTRIBUTION_NOTICES.txt"
+          test -f "$resources/THIRD_PARTY_LICENSES/Inter.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GP2SNG-macos-${{ matrix.arch }}
+          path: |
+            dist/GP2SNG-*-${{ matrix.arch }}.dmg
+            dist/GP2SNG-*-${{ matrix.arch }}-mac.zip
+            LICENSE
+            DISTRIBUTION_NOTICES.txt
+            THIRD_PARTY_LICENSES/
+          if-no-files-found: error
+          retention-days: 1
