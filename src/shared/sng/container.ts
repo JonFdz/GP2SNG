@@ -216,6 +216,26 @@ export function readSng(bytes: Uint8Array): {
     }
   }
 
+  let declaredFileBytes = 0;
+  for (const file of index) {
+    if (file.len > fileDataLen - declaredFileBytes) {
+      throw new SngWriteError('Aggregate SNG file lengths exceed the file-data section length');
+    }
+    declaredFileBytes += file.len;
+  }
+
+  const nonEmptyRanges = index
+    .filter((file) => file.len > 0)
+    .map((file) => ({ name: file.name, start: file.offset, end: file.offset + file.len }))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  for (let i = 1; i < nonEmptyRanges.length; i++) {
+    if (nonEmptyRanges[i].start < nonEmptyRanges[i - 1].end) {
+      throw new SngWriteError(
+        `SNG file-data ranges overlap: ${nonEmptyRanges[i - 1].name} and ${nonEmptyRanges[i].name}`,
+      );
+    }
+  }
+
   const files: Record<string, Uint8Array> = Object.create(null) as Record<string, Uint8Array>;
   for (const f of index) {
     const masked = bytes.subarray(f.offset, f.offset + f.len);

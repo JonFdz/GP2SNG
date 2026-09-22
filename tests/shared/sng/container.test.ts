@@ -44,6 +44,49 @@ function mutateU64(bytes: Uint8Array, offset: number, value: bigint): Uint8Array
   return out;
 }
 
+interface SngLayout {
+  dataLengthOffset: number;
+  dataLength: number;
+  entries: { lengthOffset: number; offsetOffset: number; offset: number }[];
+}
+
+function inspectSngLayout(bytes: Uint8Array): SngLayout {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const metadataLength = Number(view.getBigUint64(26, true));
+  const fileIndexLengthOffset = 34 + metadataLength;
+  const fileIndexLength = Number(view.getBigUint64(fileIndexLengthOffset, true));
+  const entryCount = Number(view.getBigUint64(fileIndexLengthOffset + 8, true));
+  let cursor = fileIndexLengthOffset + 16;
+  const entries: SngLayout['entries'] = [];
+  for (let i = 0; i < entryCount; i++) {
+    const nameLength = bytes[cursor];
+    cursor += 1 + nameLength;
+    const lengthOffset = cursor;
+    cursor += 8;
+    const offsetOffset = cursor;
+    const offset = Number(view.getBigUint64(cursor, true));
+    cursor += 8;
+    entries.push({ lengthOffset, offsetOffset, offset });
+  }
+  const dataLengthOffset = fileIndexLengthOffset + 8 + fileIndexLength;
+  return {
+    dataLengthOffset,
+    dataLength: Number(view.getBigUint64(dataLengthOffset, true)),
+    entries,
+  };
+}
+
+function twoFileContainer(firstLength: number, secondLength: number): Uint8Array {
+  return buildSngContainer(
+    [
+      { name: 'a', bytes: Uint8Array.from({ length: firstLength }, (_, i) => i + 1) },
+      { name: 'b', bytes: Uint8Array.from({ length: secondLength }, (_, i) => i + 11) },
+    ],
+    [],
+    mask,
+  );
+}
+
 describe('readSng malformed-input validation', () => {
   it.each([0, 5, 25])('rejects a truncated container of %i bytes', (length) => {
     expect(() => readSng(simpleContainer().subarray(0, length))).toThrow(/truncated/i);
@@ -75,6 +118,83 @@ describe('readSng malformed-input validation', () => {
     // One entry: name starts at 59, length at 64, absolute offset at 72.
     expect(() => readSng(mutateU64(raw, 72, BigInt(raw.length + 1)))).toThrow(/outside/i);
     expect(() => readSng(mutateU64(raw, 64, BigInt(raw.length)))).toThrow(/outside/i);
+  });
+
+  it('rejects aggregate declared file lengths greater than the file-data section', () => {
+    const raw = twoFileContainer(4, 4);
+    const layout = inspectSngLayout(raw);
+    const crafted = mutateU64(raw, layout.entries[0].lengthOffset, 5n);
+    expect(() => readSng(crafted)).toThrow(/aggregate/i);
+  });
+
+  it('rejects two entries with the same non-empty file-data range', () => {
+    const raw = twoFileContainer(4, 4);
+    const layout = inspectSngLayout(raw);
+    const crafted = mutateU64(
+      raw,
+      layout.entries[1].offsetOffset,
+      BigInt(layout.entries[0].offset),
+    );
+    expect(() => readSng(crafted)).toThrow(/overlap/i);
+  });
+
+  it('rejects partially overlapping file-data ranges', () => {
+    const raw = twoFileContainer(4, 4);
+    const layout = inspectSngLayout(raw);
+    const crafted = mutateU64(
+      raw,
+      layout.entries[1].offsetOffset,
+      BigInt(layout.entries[0].offset + 2),
+    );
+    expect(() => readSng(crafted)).toThrow(/overlap/i);
+  });
+
+  it('rejects a file-data range contained inside another range', () => {
+    const raw = twoFileContainer(6, 2);
+    const layout = inspectSngLayout(raw);
+    const crafted = mutateU64(
+      raw,
+      layout.entries[1].offsetOffset,
+      BigInt(layout.entries[0].offset + 2),
+    );
+    expect(() => readSng(crafted)).toThrow(/overlap/i);
+  });
+
+  it('accepts adjacent file-data ranges', () => {
+    const decoded = readSng(twoFileContainer(2, 2));
+    expect([...decoded.files.a]).toEqual([1, 2]);
+    expect([...decoded.files.b]).toEqual([11, 12]);
+  });
+
+  it('accepts file-data ranges separated by a gap', () => {
+    const raw = twoFileContainer(2, 2);
+    const layout = inspectSngLayout(raw);
+    const insertionOffset = layout.entries[1].offset;
+    const crafted = new Uint8Array(raw.length + 1);
+    crafted.set(raw.subarray(0, insertionOffset));
+    crafted[insertionOffset] = 0xff;
+    crafted.set(raw.subarray(insertionOffset), insertionOffset + 1);
+    const view = new DataView(crafted.buffer);
+    view.setBigUint64(layout.entries[1].offsetOffset, BigInt(layout.entries[1].offset + 1), true);
+    view.setBigUint64(layout.dataLengthOffset, BigInt(layout.dataLength + 1), true);
+
+    const decoded = readSng(crafted);
+    expect([...decoded.files.a]).toEqual([1, 2]);
+    expect([...decoded.files.b]).toEqual([11, 12]);
+  });
+
+  it('allows zero-length entries at the start of a non-empty range', () => {
+    const raw = buildSngContainer(
+      [
+        { name: 'empty', bytes: new Uint8Array() },
+        { name: 'data', bytes: new Uint8Array([7]) },
+      ],
+      [],
+      mask,
+    );
+    const decoded = readSng(raw);
+    expect(decoded.files.empty).toHaveLength(0);
+    expect([...decoded.files.data]).toEqual([7]);
   });
 
   it('rejects duplicate file names', () => {
