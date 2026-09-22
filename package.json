@@ -3,13 +3,17 @@
   "version": "1.1.0",
   "private": true,
   "description": "Convert Guitar Pro files to YARG .sng charts",
-  "license": "GPL-3.0-only",
-  "author": "Alexander Celeste",
+  "license": "GPL-3.0-or-later",
+  "author": "Alexander Celeste & Jon Fernández",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "dist": "electron-vite build && electron-builder --win portable",
+    "dist": "npm run dist:win",
+    "dist:win": "npm run build && electron-builder --win portable",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "dist:mac:arm64": "npm run build && electron-builder --mac dmg zip --arm64",
+    "dist:mac:x64": "npm run build && electron-builder --mac dmg zip --x64",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check .",
@@ -24,11 +28,38 @@
     "files": [
       "out/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "DISTRIBUTION_NOTICES.txt",
+        "to": "DISTRIBUTION_NOTICES.txt"
+      },
+      {
+        "from": "THIRD_PARTY_LICENSES",
+        "to": "THIRD_PARTY_LICENSES"
+      }
+    ],
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "icon": "build/icon.png"
     },
     "portable": {
       "artifactName": "GP2SNG-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.png",
+      "identity": null,
+      "artifactName": "GP2SNG-${version}-${arch}-mac.${ext}"
+    },
+    "dmg": {
+      "artifactName": "GP2SNG-${version}-${arch}.${ext}"
     }
   },
   "dependencies": {

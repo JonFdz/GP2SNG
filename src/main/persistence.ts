@@ -19,10 +19,17 @@ const MIDI_MAP_FILE = 'midi-map.json';
 
 // docs/DESIGN.md → Persistence schema → Location. `app.isPackaged` is passed in so
 // this module never imports 'electron' and stays unit-testable in plain Node.
-export function resolveDataDir(isPackaged: boolean): string {
-  return isPackaged
-    ? join(dirname(process.execPath), 'gp2sng-data')
-    : join(process.cwd(), 'dev-data');
+export function resolveDataDir(
+  isPackaged: boolean,
+  platform: NodeJS.Platform = process.platform,
+  userDataDir?: string,
+): string {
+  if (!isPackaged) return join(process.cwd(), 'dev-data');
+  if (platform === 'darwin') {
+    if (userDataDir === undefined) throw new Error('macOS user data directory is required');
+    return join(userDataDir, 'gp2sng-data');
+  }
+  return join(dirname(process.execPath), 'gp2sng-data');
 }
 
 // Encoding rules (DESIGN → Files): 2-space indent, trailing newline. Node writes LF.

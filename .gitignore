@@ -1,7 +1,8 @@
 node_modules/
 out/
 dist/
-build/
+build/*
+!build/icon.png
 
 # Dev-mode persistence: app-written global MIDI map + settings under `npm run dev`
 # (resolveDataDir → dev-data). Runtime state, not source — see docs/DESIGN.md.

@@ -849,7 +849,7 @@ describe('restoreSession', () => {
     expect(() =>
       useWizardStore.getState().restoreSession({
         sngFilePath: 'C:/songs/Song - Artist.sng',
-      gpFilePath: 'C:/songs/song.gp',
+        gpFilePath: 'C:/songs/song.gp',
         gpFileBytes: GP_BYTES,
         score: score([track(3, true, 40)]),
         blob: { ...blob(), selectedTrackIds: [3, 9] },

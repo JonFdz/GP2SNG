@@ -1,0 +1,13 @@
+GP2SNG
+
+Copyright (C) 2026 Alexander Celeste
+Copyright (C) 2026 Jon Fernández
+
+GP2SNG is free software licensed under the GNU General Public License,
+version 3 or later (GPL-3.0-or-later). The complete license text is shipped
+as LICENSE.txt.
+
+Corresponding source code is available at:
+https://github.com/JonFdz/GP2SNG
+
+Third-party license notices are shipped in THIRD_PARTY_LICENSES/.

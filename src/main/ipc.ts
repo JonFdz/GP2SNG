@@ -12,7 +12,7 @@ import {
 
 // Registers every window.gp2sng channel. Call exactly once, after app ready.
 export function registerIpcHandlers(): void {
-  const dataDir = resolveDataDir(app.isPackaged);
+  const dataDir = resolveDataDir(app.isPackaged, process.platform, app.getPath('userData'));
 
   ipcMain.handle('loadGpFile', async () => {
     const result = await dialog.showOpenDialog({

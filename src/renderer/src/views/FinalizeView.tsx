@@ -329,7 +329,9 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 type="button"
                 className="btn btn--affirmative"
                 onClick={handleSave}
-                disabled={!isMetadataValid(gpMetadata) || filename === null || saving || albumArtLoading}
+                disabled={
+                  !isMetadataValid(gpMetadata) || filename === null || saving || albumArtLoading
+                }
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>

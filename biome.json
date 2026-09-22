@@ -5,7 +5,15 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**/*.{ts,tsx,js,jsx,json}", "!node_modules/**", "!out/**", "!dist/**", "!build/**", "!references/**"]
+    "includes": [
+      "**/*.{ts,tsx,js,jsx,json}",
+      "!node_modules",
+      "!out",
+      "!dist",
+      "!build",
+      "!dev-data",
+      "!references"
+    ]
   },
   "formatter": {
     "enabled": true,
