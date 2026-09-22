@@ -74,7 +74,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       return;
     }
     const url = URL.createObjectURL(
-      new Blob([albumArt.bytes], {
+      new Blob([Uint8Array.from(albumArt.bytes)], {
         type: albumArt.extension === 'jpg' ? 'image/jpeg' : 'image/png',
       }),
     );

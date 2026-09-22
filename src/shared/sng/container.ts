@@ -2,6 +2,16 @@ import { SngWriteError } from '../types/index';
 
 const MAGIC = 'SNGPKG';
 
+export const MAX_SNG_INPUT_BYTES = 512 * 1024 * 1024;
+export const MAX_METADATA_BYTES = 1024 * 1024;
+export const MAX_METADATA_PAIRS = 256;
+export const MAX_METADATA_KEY_BYTES = 1024;
+export const MAX_METADATA_VALUE_BYTES = 64 * 1024;
+export const MAX_FILE_ENTRIES = 128;
+export const MAX_FILE_NAME_BYTES = 255;
+export const MAX_FILE_INDEX_BYTES = 8 + MAX_FILE_ENTRIES * (1 + MAX_FILE_NAME_BYTES + 8 + 8);
+const HEADER_BYTES = 6 + 4 + 16;
+
 function maskFile(bytes: Uint8Array, xorMask: Uint8Array): Uint8Array {
   const out = new Uint8Array(bytes.length);
   for (let i = 0; i < bytes.length; i++) {
@@ -94,23 +104,51 @@ export function readSng(bytes: Uint8Array): {
   metadata: Record<string, string>;
   files: Record<string, Uint8Array>;
 } {
+  if (bytes.byteLength > MAX_SNG_INPUT_BYTES) throw new SngWriteError('SNG input exceeds 512 MiB');
+  if (bytes.byteLength < HEADER_BYTES) throw new SngWriteError('SNG container is truncated');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const dec = new TextDecoder();
+  const dec = new TextDecoder('utf-8', { fatal: true });
   let o = 0;
-  const u32 = () => {
+  const requireBytes = (length: number, boundary = bytes.byteLength) => {
+    if (!Number.isSafeInteger(length) || length < 0 || o > boundary - length) {
+      throw new SngWriteError('SNG container is truncated or has an invalid section boundary');
+    }
+  };
+  const u8 = (boundary?: number) => {
+    requireBytes(1, boundary);
+    return bytes[o++];
+  };
+  const u32 = (boundary?: number) => {
+    requireBytes(4, boundary);
     const v = view.getUint32(o, true);
     o += 4;
     return v;
   };
-  const i32 = () => {
+  const i32 = (boundary?: number) => {
+    requireBytes(4, boundary);
     const v = view.getInt32(o, true);
     o += 4;
     return v;
   };
-  const u64 = () => {
-    const v = Number(view.getBigUint64(o, true));
+  const u64 = (boundary?: number) => {
+    requireBytes(8, boundary);
+    const raw = view.getBigUint64(o, true);
     o += 8;
-    return v;
+    if (raw > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new SngWriteError('SNG container contains an unsafe 64-bit integer');
+    }
+    return Number(raw);
+  };
+  const text = (length: number, maximum: number, boundary: number) => {
+    if (length < 0 || length > maximum) throw new SngWriteError('SNG string length is invalid');
+    requireBytes(length, boundary);
+    try {
+      const value = dec.decode(bytes.subarray(o, o + length));
+      o += length;
+      return value;
+    } catch {
+      throw new SngWriteError('SNG container contains invalid UTF-8');
+    }
   };
 
   if (dec.decode(bytes.subarray(0, 6)) !== MAGIC) throw new SngWriteError('Bad SNG magic');
@@ -120,36 +158,65 @@ export function readSng(bytes: Uint8Array): {
   o += 16;
 
   const metadataLen = u64();
+  if (metadataLen < 8 || metadataLen > MAX_METADATA_BYTES) {
+    throw new SngWriteError('Invalid SNG metadata section length');
+  }
+  if (o > bytes.byteLength - metadataLen) throw new SngWriteError('Truncated SNG metadata section');
   const metaEnd = o + metadataLen;
-  const count = u64();
-  const metadata: Record<string, string> = {};
+  const count = u64(metaEnd);
+  if (count > MAX_METADATA_PAIRS) throw new SngWriteError('Too many SNG metadata pairs');
+  const metadata: Record<string, string> = Object.create(null) as Record<string, string>;
   for (let i = 0; i < count; i++) {
-    const kl = i32();
-    const key = dec.decode(bytes.subarray(o, o + kl));
-    o += kl;
-    const vl = i32();
-    const val = dec.decode(bytes.subarray(o, o + vl));
-    o += vl;
+    const kl = i32(metaEnd);
+    const key = text(kl, MAX_METADATA_KEY_BYTES, metaEnd);
+    const vl = i32(metaEnd);
+    const val = text(vl, MAX_METADATA_VALUE_BYTES, metaEnd);
     metadata[key] = val;
   }
-  o = metaEnd;
+  if (o !== metaEnd) throw new SngWriteError('Inconsistent SNG metadata section length');
 
   const fileMetaLen = u64();
+  if (fileMetaLen < 8 || fileMetaLen > MAX_FILE_INDEX_BYTES) {
+    throw new SngWriteError('Invalid SNG file-index section length');
+  }
+  if (o > bytes.byteLength - fileMetaLen) throw new SngWriteError('Truncated SNG file index');
   const idxEnd = o + fileMetaLen;
-  const fileCount = u64();
+  const fileCount = u64(idxEnd);
+  if (fileCount > MAX_FILE_ENTRIES) throw new SngWriteError('Too many SNG file entries');
   const index: { name: string; len: number; offset: number }[] = [];
+  const names = new Set<string>();
   for (let i = 0; i < fileCount; i++) {
-    const nl = bytes[o++];
-    const name = dec.decode(bytes.subarray(o, o + nl));
-    o += nl;
-    const len = u64();
-    const offset = u64();
+    const nl = u8(idxEnd);
+    if (nl === 0 || nl > MAX_FILE_NAME_BYTES)
+      throw new SngWriteError('Invalid SNG file name length');
+    const name = text(nl, MAX_FILE_NAME_BYTES, idxEnd);
+    if (names.has(name)) throw new SngWriteError(`Duplicate SNG file name: ${name}`);
+    names.add(name);
+    const len = u64(idxEnd);
+    const offset = u64(idxEnd);
     index.push({ name, len, offset });
   }
-  o = idxEnd;
-  u64(); // fileDataLen (not needed; offsets are absolute)
+  if (o !== idxEnd) throw new SngWriteError('Inconsistent SNG file-index section length');
+  const fileDataLen = u64();
+  const fileDataStart = o;
+  if (fileDataLen > bytes.byteLength - fileDataStart) {
+    throw new SngWriteError('Truncated SNG file-data section');
+  }
+  const fileDataEnd = fileDataStart + fileDataLen;
+  if (fileDataEnd !== bytes.byteLength)
+    throw new SngWriteError('Inconsistent SNG file-data length');
 
-  const files: Record<string, Uint8Array> = {};
+  for (const file of index) {
+    if (
+      file.offset < fileDataStart ||
+      file.offset > fileDataEnd ||
+      file.len > fileDataEnd - file.offset
+    ) {
+      throw new SngWriteError(`SNG file entry is outside the file-data section: ${file.name}`);
+    }
+  }
+
+  const files: Record<string, Uint8Array> = Object.create(null) as Record<string, Uint8Array>;
   for (const f of index) {
     const masked = bytes.subarray(f.offset, f.offset + f.len);
     const plain = new Uint8Array(f.len);

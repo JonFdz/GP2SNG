@@ -29,7 +29,7 @@ To generate all platform artifacts manually in GitHub Actions, open **Actions â†
 ## Usage
 
 1. Launch GP2SNG.
-2. Load a Guitar Pro file (`.gp`, `.gp5`, `.gpx`).
+2. Load a supported Guitar Pro file (`.gp`, using the GP7/GP8 ZIP/GPIF format).
 3. Map the drum track to YARG gems and preview the chart.
 4. Export the `.sng`.
 

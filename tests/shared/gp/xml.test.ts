@@ -34,4 +34,20 @@ describe('xml helpers', () => {
   it('reads a space-separated id list as text', () => {
     expect(text(child(root, 'Ids'))).toBe('3 7 12');
   });
+
+  it('preserves ordinary escaped XML text', () => {
+    expect(text(child(parseXml('<Root>Tom &amp; Cymbal &lt;3</Root>'), 'Root'))).toBe(
+      'Tom & Cymbal <3',
+    );
+  });
+
+  it('rejects excessive XML nesting', () => {
+    const nested = `${'<N>'.repeat(258)}x${'</N>'.repeat(258)}`;
+    expect(() => parseXml(nested)).toThrow(/nested tags/i);
+  });
+
+  it('rejects excessive entity expansions', () => {
+    const xml = `<!DOCTYPE R [<!ENTITY x "x">]><R>${'&x;'.repeat(100_001)}</R>`;
+    expect(() => parseXml(xml)).toThrow(/expansion count limit/i);
+  });
 });
