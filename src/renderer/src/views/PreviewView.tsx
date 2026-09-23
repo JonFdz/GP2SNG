@@ -450,9 +450,8 @@ export function PreviewView() {
     undoGlobalRemap(a.midi); // globalReassign | globalUnassign
   }
 
-  // Undo a Preview "all notes" remap: put the MIDI back to the row it held before
-  // the first Preview remap, re-convert, and drop the entry. Reverts the session
-  // effect only — a promoted global map is untouched.
+  // Restore and undo support for global Preview remaps saved by older builds.
+  // Re-convert with the MIDI's original row, then drop the legacy entry.
   function undoGlobalRemap(midi: number) {
     const entry = previewRemaps.find((r) => r.midi === midi);
     if (entry === undefined) return;

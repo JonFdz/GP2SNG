@@ -5,12 +5,9 @@ import type { BaseYargNote, YargNoteId } from './midi';
 // Chart preview → Override layer): (tick, midi) survives re-conversion.
 export type NoteRef = { tick: number; midi: number };
 
-// The one-off override layer (docs/DESIGN.md → Chart preview → Override layer).
-// One-off reassigns ("This note only") and the §11 collision override are modeled
-// as a post-conversion layer, not mutations of the converted chart: the displayed
-// chart = convert(track, sessionMap) with these overrides applied on top. A note
-// is identified by (tick, midi) so an override survives re-conversion after an
-// "all notes" remap.
+// Preview's per-note override layer is applied on top of the raw converted chart.
+// A note is identified by (tick, midi), including when reopening an older session
+// whose persisted global Preview remap requires re-conversion during undo.
 interface NoteOverrideTarget {
   tick: number;
   midi: number;
@@ -31,9 +28,8 @@ export type ExplicitNoteOverride = NoteOverrideTarget & { dynamic: DrumDynamic }
 export type SeqOverride = NoteOverride & { seq: number };
 export type SeqDeletion = NoteRef & { seq: number };
 
-// A Preview-scoped "all notes on MIDI n" reassign. `from` is the row the MIDI held
-// before its FIRST Preview remap (so undo can restore it and re-convert); `to` is
-// the current target (null = unassigned).
+// Compatibility data from older builds that allowed global MIDI remaps in Preview.
+// New Preview edits never create these entries; restored entries remain undoable.
 export type PreviewRemap = {
   midi: number;
   from: YargNoteId | null;

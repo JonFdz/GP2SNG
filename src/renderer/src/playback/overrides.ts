@@ -25,10 +25,9 @@ export function applyOverrides(notes: YargNote[], overrides: NoteOverride[]): Ya
   });
 }
 
-// A deletion removes a note from the displayed chart entirely (the Delete-gem and
-// scope-"one" unassign actions). Like NoteOverride it is keyed by (tick, midi), so
-// deletions survive the re-conversion an "all notes" remap triggers. Pure: returns
-// a new array (or the input unchanged when empty) and never mutates it.
+// A deletion removes a note from the displayed chart entirely. Like NoteOverride,
+// it is keyed by (tick, midi), including across re-conversion when undoing a legacy
+// Preview remap. Pure: returns a new array and never mutates it.
 export function applyDeletions(
   notes: YargNote[],
   deletions: readonly { tick: number; midi: number }[],

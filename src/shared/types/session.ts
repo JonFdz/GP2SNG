@@ -32,7 +32,7 @@ export interface SessionBlob {
   warnings: ConversionWarning[];
   overrides: SeqOverride[];
   deletions: SeqDeletion[];
-  previewRemaps: PreviewRemap[];
+  previewRemaps: PreviewRemap[]; // legacy Preview remaps retained for restore, undo, and re-export
   metadata: SongMetadata;
   audioOffsetMs: number;
   // Milliseconds of silence already prepended to the bundled audio. Lets a reopened

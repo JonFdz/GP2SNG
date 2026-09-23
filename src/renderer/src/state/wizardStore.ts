@@ -14,7 +14,6 @@ import type {
   SessionBlob,
   SongMetadata,
   YargChart,
-  YargNoteId,
 } from '../../../shared/types/index';
 
 import {
@@ -151,7 +150,7 @@ export interface WizardState {
   metronomeVolume: number; // preview metronome click level, 1 = 100% (view-only preference)
   overrides: SeqOverride[]; // one-off reassigns applied on top of the chart
   deletions: SeqDeletion[]; // gems removed from the displayed chart (Delete gem / unassign)
-  previewRemaps: PreviewRemap[]; // "all notes on MIDI n" reassigns done in Preview
+  previewRemaps: PreviewRemap[]; // restored legacy global Preview remaps; never created anew
 
   // Load a freshly parsed score. Auto-selects all drum-kit tracks (FUNCTIONALITY step
   // 4) and returns to the Load step so any forward progress is discarded — the
@@ -199,12 +198,6 @@ export interface WizardState {
   deleteNote: (ref: NoteRef) => void;
   removeOverride: (tick: number, midi: number) => void;
   removeDeletion: (tick: number, midi: number) => void;
-  recordPreviewRemap: (args: {
-    midi: number;
-    from: YargNoteId | null;
-    to: YargNoteId | null;
-    nextMap: MidiMap;
-  }) => void;
   removePreviewRemap: (midi: number, revertMap: MidiMap) => void;
   goNext: () => void;
   goBack: () => void;
@@ -402,21 +395,27 @@ export const useWizardStore = create<WizardState>((set) => ({
   setPlaybackRate: (r) => set({ playbackRate: r }),
   setMetronomeOn: (on) => set({ metronomeOn: on }),
   setMetronomeVolume: (v) => set({ metronomeVolume: v }),
-  // A note has at most one one-off override: a new one for the same (tick, midi)
-  // replaces the old (docs/DESIGN.md → Chart preview → Override layer).
+  // A note has at most one override. Returning both lane and dynamic to the raw
+  // converted note removes that keyed edit instead of retaining a no-op row.
   addOverride: (override) =>
-    set((s) => ({
-      overrides: [
-        ...s.overrides.filter((o) => o.tick !== override.tick || o.midi !== override.midi),
-        {
-          ...override,
-          dynamic: override.note === 'orange' ? 'neutral' : override.dynamic,
-          seq: nextSeq(s),
-        },
-      ],
-    })),
+    set((s) => {
+      const dynamic = override.note === 'orange' ? 'neutral' : override.dynamic;
+      const remaining = s.overrides.filter(
+        (o) => o.tick !== override.tick || o.midi !== override.midi,
+      );
+      const base = s.chart?.notes.find(
+        (note) => note.tick === override.tick && note.midi === override.midi,
+      );
+      const baseDynamic = base?.note === 'orange' ? 'neutral' : base?.dynamic;
+      if (base !== undefined && base.note === override.note && baseDynamic === dynamic) {
+        return { overrides: remaining };
+      }
+      return {
+        overrides: [...remaining, { ...override, dynamic, seq: nextSeq(s) }],
+      };
+    }),
   // A gem may be deleted once; a repeat delete of the same (tick, midi) is a no-op.
-  // Keyed like overrides so deletions survive re-conversion after an "all notes" remap.
+  // Keyed like overrides so deletions survive undoing a restored legacy remap.
   deleteNote: (ref) =>
     set((s) => ({
       deletions: s.deletions.some((d) => d.tick === ref.tick && d.midi === ref.midi)
@@ -428,27 +427,7 @@ export const useWizardStore = create<WizardState>((set) => ({
     set((s) => ({ overrides: s.overrides.filter((o) => o.tick !== tick || o.midi !== midi) })),
   removeDeletion: (tick, midi) =>
     set((s) => ({ deletions: s.deletions.filter((d) => d.tick !== tick || d.midi !== midi) })),
-  // Record a Preview "all notes" remap. Captures `from` only on the MIDI's first
-  // remap; a later remap keeps that original and updates `to`. If `to` returns the
-  // MIDI to its original row, the entry drops (net no-op). Sets the session map to
-  // the caller's already-computed nextMap without clearing the other remaps.
-  recordPreviewRemap: ({ midi, from, to, nextMap }) =>
-    set((s) => {
-      const existing = s.previewRemaps.find((r) => r.midi === midi);
-      const effectiveFrom = existing ? existing.from : from;
-      const seq = nextSeq(s);
-      let previewRemaps: PreviewRemap[];
-      if (effectiveFrom === to) {
-        previewRemaps = s.previewRemaps.filter((r) => r.midi !== midi);
-      } else if (existing) {
-        previewRemaps = s.previewRemaps.map((r) => (r.midi === midi ? { ...r, to, seq } : r));
-      } else {
-        previewRemaps = [...s.previewRemaps, { midi, from, to, seq }];
-      }
-      return { sessionMap: nextMap, mapDirty: !mapsEqual(nextMap, s.baselineMap), previewRemaps };
-    }),
-  // Undo a Preview "all notes" remap: the caller supplies the reverted map (already
-  // re-converted); drop the entry.
+  // Undo a restored legacy Preview remap after the caller re-converts its map.
   removePreviewRemap: (midi, revertMap) =>
     set((s) => ({
       sessionMap: revertMap,
