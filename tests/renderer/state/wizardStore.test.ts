@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { applyOverrides } from '../../../src/renderer/src/playback/overrides';
+import { buildActionLog } from '../../../src/renderer/src/state/actionLog';
 import { outputFilename } from '../../../src/renderer/src/state/outputFilename';
 import { canAdvance, useWizardStore } from '../../../src/renderer/src/state/wizardStore';
 import { applyRemap } from '../../../src/shared/midi/index';
@@ -13,6 +15,7 @@ import {
   type SessionBlob,
   SessionRestoreError,
   type YargChart,
+  type YargNote,
 } from '../../../src/shared/types/index';
 
 function track(id: number, isDrumKit: boolean, noteCount: number): ParsedGpTrack {
@@ -40,19 +43,33 @@ const restoredChart: YargChart = {
   leadInTicks: 0,
 };
 
+const editBaseChart: YargChart = {
+  ...restoredChart,
+  notes: [
+    { tick: 0, note: 'red', dynamic: 'neutral', midi: 38 },
+    { tick: 480, note: 'red', dynamic: 'ghost', midi: 40 },
+    { tick: 960, note: 'orange', dynamic: 'neutral', midi: 36 },
+    { tick: 1440, note: 'red', dynamic: 'accent', midi: 39 },
+  ],
+};
+
+function chartWithNotes(notes: YargNote[]): YargChart {
+  return { ...editBaseChart, notes };
+}
+
 function blob(): SessionBlob {
   return {
     version: SESSION_BLOB_VERSION,
     gpFilePath: 'C:/songs/song.gp',
     gpBytes: GP_BYTES,
     selectedTrackIds: [3],
-    sessionMap: applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom'),
+    sessionMap: applyRemap(applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom'), 51, 'greenCymbal'),
     // A non-default value so restoreSession is actually verified to carry the
     // blob's settings through, not just whatever the store's own DEFAULT_ is.
     sessionSettings: { ...DEFAULT_CONVERSION_SETTINGS, cymbalGhostNotes: true },
     chart: restoredChart,
     warnings: [],
-    overrides: [{ tick: 480, midi: 47, note: 'greenTom', accented: false, seq: 1 }],
+    overrides: [{ tick: 480, midi: 47, note: 'greenTom', dynamic: 'neutral', seq: 1 }],
     deletions: [{ tick: 960, midi: 42, seq: 2 }],
     previewRemaps: [{ midi: 51, from: 'blueCymbal', to: 'greenCymbal', seq: 3 }],
     metadata: {
@@ -329,11 +346,8 @@ describe('wizardStore session map + conversion', () => {
     useWizardStore
       .getState()
       .setSessionSettings({ ...DEFAULT_CONVERSION_SETTINGS, graceNoteSpacing: '32nd' });
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: false });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'neutral' });
     useWizardStore.getState().deleteNote({ tick: 0, midi: 42 });
-    useWizardStore
-      .getState()
-      .recordPreviewRemap({ midi: 38, from: 'red', to: 'blueTom', nextMap: DEFAULT_MIDI_MAP });
     useWizardStore.getState().setViewTime(4);
 
     useWizardStore.getState().toggleTrack(1); // changed track
@@ -395,19 +409,6 @@ describe('dirty flags track divergence from the session baseline (reverting clea
     useWizardStore.getState().setSessionMap(reverted);
     expect(useWizardStore.getState().mapDirty).toBe(false);
   });
-
-  test('a Preview remap that nets back to the seeded map leaves mapDirty false', () => {
-    useWizardStore.getState().startSession(DEFAULT_MIDI_MAP, DEFAULT_CONVERSION_SETTINGS);
-    const map1 = applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom');
-    useWizardStore
-      .getState()
-      .recordPreviewRemap({ midi: 38, from: 'red', to: 'blueTom', nextMap: map1 });
-    expect(useWizardStore.getState().mapDirty).toBe(true);
-
-    const revert = applyRemap(map1, 38, 'red'); // value-equal to the seed
-    useWizardStore.getState().removePreviewRemap(38, revert);
-    expect(useWizardStore.getState().mapDirty).toBe(false);
-  });
 });
 
 describe('wizardStore preview state', () => {
@@ -428,14 +429,45 @@ describe('wizardStore preview state', () => {
   });
 
   test('addOverride replaces an existing override for the same (tick, midi)', () => {
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: true });
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'greenTom', accented: false });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'accent' });
     useWizardStore
       .getState()
-      .addOverride({ tick: 480, midi: 47, note: 'blueTom', accented: false });
+      .addOverride({ tick: 0, midi: 38, note: 'greenTom', dynamic: 'neutral' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 480, midi: 47, note: 'blueTom', dynamic: 'neutral' });
     const ovs = useWizardStore.getState().overrides;
     expect(ovs).toHaveLength(2);
-    expect(ovs.find((o) => o.tick === 0 && o.midi === 38)?.note).toBe('greenTom');
+    expect(ovs.find((o) => o.tick === 0 && o.midi === 38)).toMatchObject({
+      note: 'greenTom',
+      dynamic: 'neutral',
+    });
+  });
+
+  test('addOverride keeps one effective lane and dynamic edit for a note', () => {
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'greenTom', dynamic: 'ghost' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueCymbal', dynamic: 'ghost' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueCymbal', dynamic: 'accent' });
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'blueCymbal',
+      dynamic: 'accent',
+    });
+  });
+
+  test('addOverride normalizes orange to neutral', () => {
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'orange', dynamic: 'accent' });
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'orange',
+      dynamic: 'neutral',
+    });
   });
 
   test('deleteNote dedupes repeat deletes by (tick, midi)', () => {
@@ -458,7 +490,9 @@ describe('wizardStore preview state', () => {
       charter: 'C',
       drumsDifficulty: 3,
     });
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'greenTom', accented: false });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'greenTom', dynamic: 'neutral' });
     useWizardStore.getState().deleteNote({ tick: 4, midi: 40 });
     useWizardStore.getState().setAudioOffsetMs(120);
     useWizardStore.getState().setViewTime(9);
@@ -513,7 +547,9 @@ describe('wizardStore preview state', () => {
   test('selecting a different track clears chart-derived preview state', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
     useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc);
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'greenTom', accented: false });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'greenTom', dynamic: 'neutral' });
     useWizardStore.getState().deleteNote({ tick: 4, midi: 40 });
     useWizardStore.getState().setViewTime(5);
 
@@ -559,6 +595,260 @@ describe('wizardStore preview state', () => {
   });
 });
 
+describe('wizardStore no-op overrides', () => {
+  test('reverting lane and dynamic to the base removes the override and Action Log row', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueCymbal', dynamic: 'ghost' });
+
+    let state = useWizardStore.getState();
+    expect(state.overrides).toHaveLength(1);
+    expect(
+      buildActionLog({
+        overrides: state.overrides,
+        deletions: state.deletions,
+        previewRemaps: state.previewRemaps,
+        barStarts: [0],
+      }),
+    ).toHaveLength(1);
+
+    state.addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'neutral' });
+    state = useWizardStore.getState();
+    expect(state.overrides).toEqual([]);
+    expect(
+      buildActionLog({
+        overrides: state.overrides,
+        deletions: state.deletions,
+        previewRemaps: state.previewRemaps,
+        barStarts: [0],
+      }),
+    ).toEqual([]);
+  });
+
+  test('reverting only the lane keeps an override while the dynamic differs', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueCymbal', dynamic: 'ghost' });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'ghost' });
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'red',
+      dynamic: 'ghost',
+    });
+  });
+
+  test('reverting only the dynamic keeps an override while the lane differs', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueCymbal', dynamic: 'ghost' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueCymbal', dynamic: 'neutral' });
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'blueCymbal',
+      dynamic: 'neutral',
+    });
+  });
+
+  test('returning a base Ghost note to Ghost removes the override', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 480, midi: 40, note: 'blueTom', dynamic: 'ghost' });
+    useWizardStore.getState().addOverride({ tick: 480, midi: 40, note: 'red', dynamic: 'ghost' });
+
+    expect(useWizardStore.getState().overrides).toEqual([]);
+  });
+
+  test.each([
+    { tick: 480, midi: 40, source: 'Ghost' },
+    { tick: 1440, midi: 39, source: 'Accent' },
+  ])('keeps explicit Neutral over a base $source note', ({ tick, midi }) => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().addOverride({ tick, midi, note: 'red', dynamic: 'neutral' });
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'red',
+      dynamic: 'neutral',
+    });
+  });
+
+  test('normalizes orange to neutral before comparing with the base note', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 960, midi: 36, note: 'orange', dynamic: 'accent' });
+    expect(useWizardStore.getState().overrides).toEqual([]);
+  });
+});
+
+describe('setConversion override reconciliation', () => {
+  test('removes an explicit override made redundant by the new raw chart and its Action Log row', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'neutral' });
+    const before = useWizardStore.getState();
+    expect(
+      buildActionLog({
+        overrides: before.overrides,
+        deletions: before.deletions,
+        previewRemaps: before.previewRemaps,
+        barStarts: [0],
+      }),
+    ).toHaveLength(1);
+
+    useWizardStore
+      .getState()
+      .setConversion(
+        chartWithNotes([{ tick: 0, note: 'blueTom', dynamic: 'neutral', midi: 38 }]),
+        [],
+      );
+
+    const state = useWizardStore.getState();
+    expect(state.overrides).toEqual([]);
+    expect(
+      buildActionLog({
+        overrides: state.overrides,
+        deletions: state.deletions,
+        previewRemaps: state.previewRemaps,
+        barStarts: [0],
+      }),
+    ).toEqual([]);
+  });
+
+  test('keeps an explicit override when the lane matches but the dynamic still differs', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'ghost' });
+
+    useWizardStore
+      .getState()
+      .setConversion(
+        chartWithNotes([{ tick: 0, note: 'blueTom', dynamic: 'neutral', midi: 38 }]),
+        [],
+      );
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'blueTom',
+      dynamic: 'ghost',
+    });
+  });
+
+  test('keeps an explicit override when the dynamic matches but the lane still differs', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'ghost' });
+
+    useWizardStore
+      .getState()
+      .setConversion(chartWithNotes([{ tick: 0, note: 'red', dynamic: 'ghost', midi: 38 }]), []);
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'blueTom',
+      dynamic: 'ghost',
+    });
+  });
+
+  test('removes an explicit override when the raw note disappears', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'neutral' });
+
+    useWizardStore.getState().setConversion(chartWithNotes([]), []);
+
+    expect(useWizardStore.getState().overrides).toEqual([]);
+  });
+
+  test('normalizes orange to neutral before reconciling it with the raw chart', () => {
+    useWizardStore
+      .getState()
+      .setConversion(chartWithNotes([{ tick: 0, note: 'red', dynamic: 'neutral', midi: 38 }]), []);
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'orange', dynamic: 'accent' });
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'orange',
+      dynamic: 'neutral',
+    });
+
+    useWizardStore
+      .getState()
+      .setConversion(
+        chartWithNotes([{ tick: 0, note: 'orange', dynamic: 'neutral', midi: 38 }]),
+        [],
+      );
+
+    expect(useWizardStore.getState().overrides).toEqual([]);
+  });
+
+  test('reconciles redundant and missing overrides while retaining unrelated active overrides', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'neutral' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 480, midi: 40, note: 'blueTom', dynamic: 'accent' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 1440, midi: 39, note: 'blueTom', dynamic: 'neutral' });
+
+    useWizardStore.getState().setConversion(
+      chartWithNotes([
+        { tick: 0, note: 'blueTom', dynamic: 'neutral', midi: 38 },
+        { tick: 480, note: 'red', dynamic: 'ghost', midi: 40 },
+      ]),
+      [],
+    );
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      tick: 480,
+      midi: 40,
+      note: 'blueTom',
+      dynamic: 'accent',
+    });
+  });
+
+  test('preserves legacy overrides verbatim and keeps their existing semantics', () => {
+    const legacyBlob: SessionBlob = {
+      ...blob(),
+      chart: editBaseChart,
+      overrides: [
+        { tick: 0, midi: 38, note: 'greenTom', accented: true, seq: 4 },
+        { tick: 480, midi: 40, note: 'blueTom', accented: false, seq: 5 },
+      ],
+    };
+    useWizardStore.getState().restoreSession({
+      sngFilePath: 'C:/songs/Song - Artist.sng',
+      gpFilePath: 'C:/songs/song.gp',
+      gpFileBytes: GP_BYTES,
+      score: score([track(3, true, 40)]),
+      blob: legacyBlob,
+      audioBytes: new Uint8Array([9, 9, 9]),
+    });
+    const nextChart = chartWithNotes([
+      { tick: 0, note: 'red', dynamic: 'neutral', midi: 38 },
+      { tick: 480, note: 'red', dynamic: 'ghost', midi: 40 },
+    ]);
+
+    useWizardStore.getState().setConversion(nextChart, []);
+
+    expect(useWizardStore.getState().overrides).toEqual(legacyBlob.overrides);
+    expect(applyOverrides(nextChart.notes, useWizardStore.getState().overrides)).toEqual([
+      { tick: 0, note: 'greenTom', dynamic: 'accent', midi: 38 },
+      { tick: 480, note: 'blueTom', dynamic: 'ghost', midi: 40 },
+    ]);
+  });
+});
+
 describe('canAdvance', () => {
   test('load requires a loaded score and a selected track with notes', () => {
     const sc = score([track(0, true, 10), track(1, true, 0)]);
@@ -577,17 +867,17 @@ describe('canAdvance', () => {
 
 describe('wizardStore action-log edits', () => {
   test('edits carry increasing recency stamps', () => {
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: false });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'neutral' });
     useWizardStore.getState().deleteNote({ tick: 480, midi: 47 });
     const { overrides, deletions } = useWizardStore.getState();
     expect(deletions[0].seq).toBeGreaterThan(overrides[0].seq);
   });
 
   test('removeOverride removes exactly the keyed override', () => {
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: false });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'neutral' });
     useWizardStore
       .getState()
-      .addOverride({ tick: 480, midi: 47, note: 'blueTom', accented: false });
+      .addOverride({ tick: 480, midi: 47, note: 'blueTom', dynamic: 'neutral' });
     useWizardStore.getState().removeOverride(0, 38);
     const ovs = useWizardStore.getState().overrides;
     expect(ovs).toHaveLength(1);
@@ -603,67 +893,28 @@ describe('wizardStore action-log edits', () => {
     expect(dels[0]).toMatchObject({ tick: 480, midi: 47 });
   });
 
-  test('recordPreviewRemap captures the original row once and updates the target', () => {
-    const map1 = applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom');
-    useWizardStore
-      .getState()
-      .recordPreviewRemap({ midi: 38, from: 'red', to: 'blueTom', nextMap: map1 });
-    let pr = useWizardStore.getState().previewRemaps;
-    expect(pr).toHaveLength(1);
-    expect(pr[0]).toMatchObject({ midi: 38, from: 'red', to: 'blueTom' });
-    expect(useWizardStore.getState().sessionMap).toBe(map1);
-
-    const map2 = applyRemap(map1, 38, 'greenTom');
-    // The view passes the current placement ('blueTom') as `from`; the store keeps the original 'red'.
-    useWizardStore
-      .getState()
-      .recordPreviewRemap({ midi: 38, from: 'blueTom', to: 'greenTom', nextMap: map2 });
-    pr = useWizardStore.getState().previewRemaps;
-    expect(pr).toHaveLength(1);
-    expect(pr[0]).toMatchObject({ midi: 38, from: 'red', to: 'greenTom' });
-  });
-
-  test('recordPreviewRemap drops the row when the target returns to the original (net no-op)', () => {
-    const map1 = applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom');
-    useWizardStore
-      .getState()
-      .recordPreviewRemap({ midi: 38, from: 'red', to: 'blueTom', nextMap: map1 });
-    const map2 = applyRemap(map1, 38, 'red');
-    useWizardStore
-      .getState()
-      .recordPreviewRemap({ midi: 38, from: 'blueTom', to: 'red', nextMap: map2 });
-    expect(useWizardStore.getState().previewRemaps).toEqual([]);
-  });
-
-  test('removePreviewRemap reverts the session map and drops the entry', () => {
-    const map1 = applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom');
-    useWizardStore
-      .getState()
-      .recordPreviewRemap({ midi: 38, from: 'red', to: 'blueTom', nextMap: map1 });
-    const revert = applyRemap(map1, 38, 'red');
-    useWizardStore.getState().removePreviewRemap(38, revert);
+  test('removePreviewRemap undoes a restored legacy remap', () => {
+    restore();
+    const currentMap = useWizardStore.getState().sessionMap;
+    if (currentMap === null) throw new Error('Expected a restored session map.');
+    const revert = applyRemap(currentMap, 51, 'blueCymbal');
+    useWizardStore.getState().removePreviewRemap(51, revert);
+    useWizardStore.getState().setConversion(restoredChart, []);
     expect(useWizardStore.getState().previewRemaps).toEqual([]);
     expect(useWizardStore.getState().sessionMap).toBe(revert);
+    expect(useWizardStore.getState().chart).toEqual(restoredChart);
   });
 
-  test('previewRemaps clear on setSessionMap, toggleTrack, and reset', () => {
-    const map1 = applyRemap(DEFAULT_MIDI_MAP, 38, 'blueTom');
-    const record = () =>
-      useWizardStore
-        .getState()
-        .recordPreviewRemap({ midi: 38, from: 'red', to: 'blueTom', nextMap: map1 });
-
-    record();
+  test('restored legacy previewRemaps clear on setSessionMap, toggleTrack, and reset', () => {
+    restore();
     useWizardStore.getState().setSessionMap(DEFAULT_MIDI_MAP);
     expect(useWizardStore.getState().previewRemaps).toEqual([]);
 
-    record();
-    useWizardStore.getState().loadScore('a.gp', GP_BYTES, score([track(0, true, 1)]));
-    record();
-    useWizardStore.getState().toggleTrack(0);
+    restore();
+    useWizardStore.getState().toggleTrack(3);
     expect(useWizardStore.getState().previewRemaps).toEqual([]);
 
-    record();
+    restore();
     useWizardStore.getState().reset();
     expect(useWizardStore.getState().previewRemaps).toEqual([]);
   });

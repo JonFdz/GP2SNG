@@ -7,7 +7,7 @@ const barStarts = [0, 1920, 3840, 5760];
 describe('buildActionLog', () => {
   it('emits a reassign row with the played bar and target', () => {
     const rows = buildActionLog({
-      overrides: [{ tick: 2000, midi: 38, note: 'blueCymbal', accented: true, seq: 1 }],
+      overrides: [{ tick: 2000, midi: 38, note: 'blueCymbal', dynamic: 'ghost', seq: 1 }],
       deletions: [],
       previewRemaps: [],
       barStarts,
@@ -20,7 +20,7 @@ describe('buildActionLog', () => {
         midi: 38,
         bar: 2,
         note: 'blueCymbal',
-        accented: true,
+        dynamic: 'ghost',
       },
     ]);
   });
@@ -35,7 +35,7 @@ describe('buildActionLog', () => {
     expect(rows).toEqual([{ kind: 'delete', seq: 3, tick: 4000, midi: 46, bar: 3 }]);
   });
 
-  it('emits global reassign and unassign rows from previewRemaps', () => {
+  it('emits global rows for restored legacy previewRemaps', () => {
     const rows = buildActionLog({
       overrides: [],
       deletions: [],
@@ -53,7 +53,7 @@ describe('buildActionLog', () => {
 
   it('a deleted note supersedes its override (single delete row)', () => {
     const rows = buildActionLog({
-      overrides: [{ tick: 0, midi: 38, note: 'red', accented: false, seq: 1 }],
+      overrides: [{ tick: 0, midi: 38, note: 'red', dynamic: 'neutral', seq: 1 }],
       deletions: [{ tick: 0, midi: 38, seq: 2 }],
       previewRemaps: [],
       barStarts,
@@ -75,9 +75,9 @@ describe('buildActionLog', () => {
     expect(rows.map((r) => (r as { tick: number }).tick)).toEqual([400, 300, 100]);
   });
 
-  it('floats bar-less global rows above per-note rows, newest global first', () => {
+  it('floats restored legacy global rows above per-note rows, newest first', () => {
     const rows = buildActionLog({
-      overrides: [{ tick: 5000, midi: 38, note: 'red', accented: false, seq: 1 }],
+      overrides: [{ tick: 5000, midi: 38, note: 'red', dynamic: 'neutral', seq: 1 }],
       deletions: [{ tick: 1000, midi: 40, seq: 2 }],
       previewRemaps: [
         { midi: 49, from: 'blueCymbal', to: 'greenCymbal', seq: 3 },

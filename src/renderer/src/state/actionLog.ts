@@ -1,24 +1,24 @@
 import { splitYargNoteId } from '../../../shared/midi/index';
 import type {
   BaseYargNote,
+  DrumDynamic,
   PreviewRemap,
   SeqDeletion,
   SeqOverride,
 } from '../../../shared/types/index';
 
 // One row of the Preview Action Log (docs/DESIGN.md → Chart preview → Action Log).
-// A live view of an active edit, not a historical event: reassign/delete rows are
-// keyed to a note (with its played bar), global rows to a MIDI number.
+// A live view of active edits, not historical events. New Preview edits are keyed
+// per note; global rows represent restored legacy Preview remaps only.
 export type LoggedAction =
-  | {
+  | ({
       kind: 'reassign';
       seq: number;
       tick: number;
       midi: number;
       bar: number;
       note: BaseYargNote;
-      accented: boolean;
-    }
+    } & ({ dynamic: DrumDynamic; accented?: never } | { accented: boolean; dynamic?: never }))
   | { kind: 'delete'; seq: number; tick: number; midi: number; bar: number }
   | { kind: 'globalReassign'; seq: number; midi: number; note: BaseYargNote; accented: boolean }
   | { kind: 'globalUnassign'; seq: number; midi: number };
@@ -44,9 +44,8 @@ function playedBarOf(barStarts: readonly number[], tick: number): number {
 }
 
 // Derive the ordered log from the current edit layers. Deletions supersede a
-// coincident override (one row per edited note). Rows sort by descending tick;
-// global "all notes" rows have no tick (song-wide) and float to the top, with
-// recency (newest first) breaking ties and ordering the global rows among themselves.
+// coincident override. Legacy global rows have no tick and float to the top, with
+// recency breaking ties and ordering those rows among themselves.
 export function buildActionLog({
   overrides,
   deletions,
@@ -74,7 +73,7 @@ export function buildActionLog({
       midi: o.midi,
       bar: playedBarOf(barStarts, o.tick),
       note: o.note,
-      accented: o.accented,
+      ...(o.dynamic !== undefined ? { dynamic: o.dynamic } : { accented: o.accented }),
     });
   }
   for (const r of previewRemaps) {

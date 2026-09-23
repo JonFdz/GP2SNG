@@ -14,7 +14,11 @@ function rowLabel(a: LoggedAction) {
           <span className="action-log__text">
             Bar {a.bar} · MIDI {a.midi} →
           </span>
-          <YargNoteSwatch note={a.note} accented={a.accented} />
+          <YargNoteSwatch
+            note={a.note}
+            dynamic={a.dynamic}
+            accented={'accented' in a ? a.accented : false}
+          />
           <span className="action-log__text">{yargNoteLabel(a.note)}</span>
         </>
       );
