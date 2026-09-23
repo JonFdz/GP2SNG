@@ -60,6 +60,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const [albumArtLoading, setAlbumArtLoading] = useState(false);
   const [albumArtUrl, setAlbumArtUrl] = useState<string | null>(null);
   const albumArtInputRef = useRef<HTMLInputElement>(null);
+  const editRevisionRef = useRef(0);
 
   // Seed the metadata form from the parsed score on first entry.
   useEffect(() => {
@@ -111,28 +112,34 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const filename = outputFilename(gpMetadata.name, gpMetadata.artist, outputFilenameOverride);
   const filenameError = outputFilenameOverride !== null && filename === null;
 
+  function markUnsaved() {
+    editRevisionRef.current += 1;
+    setSaved(false);
+  }
+
   function handleMetadataChange(patch: Parameters<typeof setMetadata>[0]) {
     setMetadata(patch);
-    setSaved(false);
+    markUnsaved();
   }
 
   function handleOutputFilenameChange(value: string | null) {
     setOutputFilenameOverride(value);
-    setSaved(false);
+    markUnsaved();
   }
 
   function handleClearAlbumArt() {
     clearAlbumArt();
-    setSaved(false);
+    markUnsaved();
   }
 
   function handleSaveDirChange(next: string) {
     if (next === saveDir) return;
     setSaveDir(next);
-    setSaved(false);
+    markUnsaved();
   }
 
   async function doWrite(dir: string, filename: string) {
+    const writeRevision = editRevisionRef.current;
     setPendingSave(null);
     setSaving(true);
     try {
@@ -170,7 +177,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
         albumArt ?? undefined,
       );
       await window.gp2sng.writeSng(dir, filename, bytes);
-      setSaved(true);
+      if (editRevisionRef.current === writeRevision) setSaved(true);
       setSaveError(null);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save the .sng file.');
@@ -221,7 +228,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       setAlbumArt({ bytes, extension: extension === 'png' ? 'png' : 'jpg' });
-      setSaved(false);
+      markUnsaved();
       setAlbumArtError(null);
     } catch {
       setAlbumArtError('Could not read that image file. Pick a different file.');
