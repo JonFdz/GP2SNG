@@ -93,7 +93,7 @@ export function packagedRendererUrl(rendererHtmlPath: string): URL {
 export function contentSecurityPolicy(isPackaged: boolean, developmentUrl?: URL): string {
   const common = [
     "default-src 'none'",
-    "script-src 'self' 'wasm-unsafe-eval'",
+    `script-src 'self' 'wasm-unsafe-eval'${isPackaged ? '' : " 'unsafe-inline'"}`,
     `style-src 'self'${isPackaged ? '' : " 'unsafe-inline'"}`,
     "font-src 'self'",
     "img-src 'self' data: blob:",

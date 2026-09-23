@@ -14,7 +14,7 @@ Windows and macOS builds are currently unsigned. Windows SmartScreen may warn ab
 
 ## Build from source
 
-**Prerequisites:** [Node.js](https://nodejs.org/) 20 or newer (includes npm) and [Git](https://git-scm.com/).
+**Prerequisites:** [Node.js](https://nodejs.org/) 24 LTS or newer (includes npm) and [Git](https://git-scm.com/).
 
 ```bash
 git clone https://github.com/JonFdz/GP2SNG.git

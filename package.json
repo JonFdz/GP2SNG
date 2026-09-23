@@ -6,7 +6,11 @@
   "license": "GPL-3.0-or-later",
   "author": "Alexander Celeste & Jon Fernández",
   "main": "./out/main/index.js",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
+    "predev": "install-electron --no",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "dist": "npm run dist:win",

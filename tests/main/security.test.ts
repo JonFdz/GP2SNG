@@ -10,6 +10,12 @@ import {
   validateDevelopmentRendererUrl,
 } from '../../src/main/security';
 
+function directiveSources(policy: string, name: string): string[] {
+  const directive = policy.split('; ').find((value) => value.startsWith(`${name} `));
+  if (directive === undefined) throw new Error(`Missing CSP directive: ${name}`);
+  return directive.split(' ').slice(1);
+}
+
 describe('main-process file boundaries', () => {
   it('checks the on-disk size before callers read a selected file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'gp2sng-size-'));
@@ -60,12 +66,32 @@ describe('renderer trust boundary', () => {
     expect(isTrustedRendererUrl('file:///tmp/index.html', expected)).toBe(false);
   });
 
-  it('keeps production network access closed except for the embedded WASM data URI', () => {
+  it('keeps unsafe-inline out of the production script policy', () => {
     const production = contentSecurityPolicy(true);
-    expect(production).toContain('connect-src data:');
-    expect(production).not.toMatch(/connect-src[^;]*https?:/);
+    expect(directiveSources(production, 'script-src')).toEqual(["'self'", "'wasm-unsafe-eval'"]);
+  });
+
+  it('allows the inline React Refresh preamble only in development', () => {
     const dev = contentSecurityPolicy(false, new URL('http://localhost:5173/'));
-    expect(dev).toContain('connect-src');
-    expect(dev).toContain('ws://localhost:5173');
+    expect(directiveSources(dev, 'script-src')).toEqual([
+      "'self'",
+      "'wasm-unsafe-eval'",
+      "'unsafe-inline'",
+    ]);
+  });
+
+  it('keeps production network access limited to the embedded WASM data URI', () => {
+    const production = contentSecurityPolicy(true);
+    expect(directiveSources(production, 'connect-src')).toEqual(['data:']);
+  });
+
+  it('allows only the configured loopback HTTP and WebSocket origins in development', () => {
+    const dev = contentSecurityPolicy(false, new URL('http://localhost:5173/'));
+    expect(directiveSources(dev, 'connect-src')).toEqual([
+      "'self'",
+      'data:',
+      'http://localhost:5173',
+      'ws://localhost:5173',
+    ]);
   });
 });
