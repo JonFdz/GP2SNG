@@ -33,6 +33,11 @@ To generate all platform artifacts manually in GitHub Actions, open **Actions â†
 3. Map the drum track to YARG gems and preview the chart.
 4. Export the `.sng`.
 
+GP2SNG-generated `.sng` files include editing-session data and the original Guitar Pro source
+bytes, allowing them to be reopened and reconverted without the original `.gp` file. Sharing the
+`.sng` therefore also shares that embedded source. New exports retain only the source filename for
+display, not its original absolute filesystem path.
+
 ## License
 
 GP2SNG is free software licensed under [GNU GPL version 3 or later](LICENSE). The corresponding source is available in this repository. Bundled third-party notices are in [`THIRD_PARTY_LICENSES/`](THIRD_PARTY_LICENSES/).

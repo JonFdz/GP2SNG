@@ -6,6 +6,7 @@ import type { YargChart } from '../../../shared/types/index';
 import { resolveFinalizeAudio } from '../audio/index';
 import { MetadataForm } from '../components/MetadataForm';
 import { displayedNotes } from '../playback/overrides';
+import { isFileWithinSizeLimit, MAX_ALBUM_ART_FILE_BYTES } from '../state/fileSelection';
 import { defaultMetadata, isMetadataValid, metadataErrors } from '../state/metadata';
 import {
   automaticOutputFilenameBase,
@@ -110,6 +111,27 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const filename = outputFilename(gpMetadata.name, gpMetadata.artist, outputFilenameOverride);
   const filenameError = outputFilenameOverride !== null && filename === null;
 
+  function handleMetadataChange(patch: Parameters<typeof setMetadata>[0]) {
+    setMetadata(patch);
+    setSaved(false);
+  }
+
+  function handleOutputFilenameChange(value: string | null) {
+    setOutputFilenameOverride(value);
+    setSaved(false);
+  }
+
+  function handleClearAlbumArt() {
+    clearAlbumArt();
+    setSaved(false);
+  }
+
+  function handleSaveDirChange(next: string) {
+    if (next === saveDir) return;
+    setSaveDir(next);
+    setSaved(false);
+  }
+
   async function doWrite(dir: string, filename: string) {
     setPendingSave(null);
     setSaving(true);
@@ -191,10 +213,15 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       setAlbumArtError('Choose a PNG or JPEG image.');
       return;
     }
+    if (!isFileWithinSizeLimit(file, MAX_ALBUM_ART_FILE_BYTES)) {
+      setAlbumArtError('Artwork file is too large. The maximum file size is 20 MiB.');
+      return;
+    }
     setAlbumArtLoading(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       setAlbumArt({ bytes, extension: extension === 'png' ? 'png' : 'jpg' });
+      setSaved(false);
       setAlbumArtError(null);
     } catch {
       setAlbumArtError('Could not read that image file. Pick a different file.');
@@ -208,7 +235,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       <h1 className="view-title">Finalize</h1>
       <p className="view-hint">Review the song details and choose where to save the .sng file.</p>
 
-      <MetadataForm metadata={gpMetadata} errors={errors} onChange={setMetadata} />
+      <MetadataForm metadata={gpMetadata} errors={errors} onChange={handleMetadataChange} />
 
       <section className="save-section">
         <div className="save-section__dir">
@@ -232,7 +259,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 <button
                   type="button"
                   className="btn btn--destructive"
-                  onClick={clearAlbumArt}
+                  onClick={handleClearAlbumArt}
                   disabled={albumArtLoading}
                 >
                   Remove
@@ -266,14 +293,14 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 value={filenameBase}
                 aria-invalid={filenameError}
                 aria-describedby={filenameError ? 'output-filename-error' : undefined}
-                onChange={(e) => setOutputFilenameOverride(withoutSngExtension(e.target.value))}
+                onChange={(e) => handleOutputFilenameChange(withoutSngExtension(e.target.value))}
               />
               <span className="save-section__extension">.sng</span>
               <button
                 type="button"
                 className="btn"
                 disabled={outputFilenameOverride === null}
-                onClick={() => setOutputFilenameOverride(null)}
+                onClick={() => handleOutputFilenameChange(null)}
               >
                 Reset
               </button>
@@ -295,14 +322,14 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
               className="text-input"
               value={saveDir}
               placeholder="Choose an output directory"
-              onChange={(e) => setSaveDir(e.target.value)}
+              onChange={(e) => handleSaveDirChange(e.target.value)}
             />
             <button
               type="button"
               className="btn"
               onClick={async () => {
                 const dir = await window.gp2sng.chooseOutputDir();
-                if (dir !== null) setSaveDir(dir);
+                if (dir !== null) handleSaveDirChange(dir);
               }}
             >
               Browse…

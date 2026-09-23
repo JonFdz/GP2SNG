@@ -10,6 +10,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>('convert');
   const [dismissed, setDismissed] = useState(false);
   const loadFailed = useSettingsStore((s) => s.loadFailed);
+  const hydrated = useSettingsStore((s) => s.hydrated);
   const hydrate = useSettingsStore((s) => s.hydrate);
 
   // Scroll the content area back to the top whenever the user navigates to a new
@@ -25,6 +26,14 @@ export function App() {
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
   }, [tab, step]);
+
+  if (!hydrated) {
+    return (
+      <div className="app-shell">
+        <main className="tab-body">Loading settings…</main>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">

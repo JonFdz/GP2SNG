@@ -31,7 +31,9 @@ import { displayedNotes } from '../playback/overrides';
 import { type MetronomeBeat, Scheduler } from '../playback/scheduler';
 import { errorMarkers, warningMarkers } from '../playback/warningMarkers';
 import { buildActionLog, type LoggedAction } from '../state/actionLog';
+import { isFileWithinSizeLimit, MAX_AUDIO_FILE_BYTES } from '../state/fileSelection';
 import { useSettingsStore } from '../state/settingsStore';
+import { sourceFileName } from '../state/sourceFile';
 import { useChartErrors } from '../state/useChartErrors';
 import { useWizardStore } from '../state/wizardStore';
 
@@ -39,7 +41,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 // The source file's name without its directory or extension, for the transport title.
 function baseNameOf(path: string): string {
-  const name = path.split(/[\\/]/).pop() ?? path;
+  const name = sourceFileName(path);
   const dot = name.lastIndexOf('.');
   return dot === -1 ? name : name.slice(0, dot);
 }
@@ -403,6 +405,10 @@ export function PreviewView() {
     e.target.value = ''; // allow re-selecting the same file later
     if (file === undefined) return;
     setAudioError(null);
+    if (!isFileWithinSizeLimit(file, MAX_AUDIO_FILE_BYTES)) {
+      setAudioError('Audio file is too large. The maximum file size is 256 MiB.');
+      return;
+    }
     setAudioLoading(true);
     try {
       const buf = await file.arrayBuffer();

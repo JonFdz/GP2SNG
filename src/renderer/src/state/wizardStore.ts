@@ -129,6 +129,14 @@ function reconcileExplicitOverrides(
   });
 }
 
+function reconcileDeletions(
+  notes: readonly YargNote[],
+  deletions: readonly SeqDeletion[],
+): SeqDeletion[] {
+  const sourceKeys = new Set(notes.map(noteKey));
+  return deletions.filter((deletion) => sourceKeys.has(noteKey(deletion)));
+}
+
 // Everything scoped to converting one song (docs/DESIGN.md → Architecture → State
 // model). Task 24 populated the Load/Track fields; Task 25 adds the session map,
 // its dirty flag (feeds the "Update global MIDI map?" prompt), and the converted
@@ -401,13 +409,14 @@ export const useWizardStore = create<WizardState>((set) => ({
       warnings: [],
     })),
   // Every converter caller supplies an unadjusted GP chart. This single path
-  // reconciles explicit overrides against it, then reapplies the session's
-  // absolute tempo correction. Legacy overrides are preserved verbatim.
+  // reconciles keyed edits against it, then reapplies the session's absolute
+  // tempo correction. Legacy overrides are preserved verbatim.
   setConversion: (chart, warnings) =>
     set((s) => ({
       chart: scaleChartTempo(chart, 1, s.tempoScale),
       warnings,
       overrides: reconcileExplicitOverrides(chart.notes, s.overrides),
+      deletions: reconcileDeletions(chart.notes, s.deletions),
     })),
   setTempoScale: (tempoScale) =>
     set((s) => {
