@@ -52,7 +52,11 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const setOutputDir = useSettingsStore((s) => s.setOutputDir);
 
   const [saveDir, setSaveDir] = useState(outputDir ?? '');
-  const [pendingSave, setPendingSave] = useState<{ dir: string; filename: string } | null>(null);
+  const [pendingSave, setPendingSave] = useState<{
+    dir: string;
+    filename: string;
+    revision: number;
+  } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -61,6 +65,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const [albumArtUrl, setAlbumArtUrl] = useState<string | null>(null);
   const albumArtInputRef = useRef<HTMLInputElement>(null);
   const editRevisionRef = useRef(0);
+  const saveAttemptActiveRef = useRef(false);
 
   // Seed the metadata form from the parsed score on first entry.
   useEffect(() => {
@@ -117,6 +122,11 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
     setSaved(false);
   }
 
+  function finishSaveAttempt() {
+    saveAttemptActiveRef.current = false;
+    setSaving(false);
+  }
+
   function handleMetadataChange(patch: Parameters<typeof setMetadata>[0]) {
     setMetadata(patch);
     markUnsaved();
@@ -138,10 +148,8 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
     markUnsaved();
   }
 
-  async function doWrite(dir: string, filename: string) {
-    const writeRevision = editRevisionRef.current;
+  async function doWrite(dir: string, filename: string, writeRevision: number) {
     setPendingSave(null);
-    setSaving(true);
     try {
       const displayedChart: YargChart = { ...gpChart, notes: displayed };
       const leadInMs = Math.round(
@@ -182,33 +190,61 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save the .sng file.');
     } finally {
-      setSaving(false);
+      finishSaveAttempt();
     }
   }
 
   async function handleSave() {
-    if (filename === null || !isMetadataValid(gpMetadata)) return;
-    setSaveError(null);
-    let dir = saveDir.trim();
-    if (dir === '') {
-      const chosen = await window.gp2sng.chooseOutputDir();
-      if (chosen === null) return; // user cancelled
-      dir = chosen;
-      setSaveDir(chosen);
-      // First save with no configured directory: persist the choice so it becomes
-      // the default for every later conversion. Best-effort — a persistence failure
-      // must not block this save (the value is retained in-memory).
-      void setOutputDir(chosen).catch(() => {});
+    if (
+      filename === null ||
+      !isMetadataValid(gpMetadata) ||
+      saveAttemptActiveRef.current ||
+      pendingSave !== null
+    ) {
+      return;
     }
+    const saveRevision = editRevisionRef.current;
+    saveAttemptActiveRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+    let delegatedToWrite = false;
     try {
+      let dir = saveDir.trim();
+      if (dir === '') {
+        const chosen = await window.gp2sng.chooseOutputDir();
+        if (chosen === null || editRevisionRef.current !== saveRevision) return;
+        dir = chosen;
+        setSaveDir(chosen);
+        // First save with no configured directory: persist the choice so it becomes
+        // the default for every later conversion. Best-effort — a persistence failure
+        // must not block this save (the value is retained in-memory).
+        void setOutputDir(chosen).catch(() => {});
+      }
       if (await window.gp2sng.pathExists(dir, filename)) {
-        setPendingSave({ dir, filename });
+        if (editRevisionRef.current !== saveRevision) return;
+        setPendingSave({ dir, filename, revision: saveRevision });
         return;
       }
-      await doWrite(dir, filename);
+      if (editRevisionRef.current !== saveRevision) return;
+      delegatedToWrite = true;
+      await doWrite(dir, filename, saveRevision);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save the .sng file.');
+    } finally {
+      if (!delegatedToWrite) finishSaveAttempt();
     }
+  }
+
+  async function handleOverwrite() {
+    if (pendingSave === null || saveAttemptActiveRef.current) return;
+    if (editRevisionRef.current !== pendingSave.revision) {
+      setPendingSave(null);
+      return;
+    }
+    const save = pendingSave;
+    saveAttemptActiveRef.current = true;
+    setSaving(true);
+    await doWrite(save.dir, save.filename, save.revision);
   }
 
   async function handleAlbumArtFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -388,7 +424,8 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={() => doWrite(pendingSave.dir, pendingSave.filename)}
+                onClick={handleOverwrite}
+                disabled={saving}
               >
                 Overwrite
               </button>
