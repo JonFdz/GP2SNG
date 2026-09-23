@@ -54,6 +54,9 @@ jobs:
             "dist/win-unpacked/resources/DISTRIBUTION_NOTICES.txt",
             "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/Inter.txt",
             "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/NPM_RUNTIME_NOTICES.txt",
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/Emscripten.txt",
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/musl.txt",
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/compiler-rt.txt",
             "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/libogg.txt",
             "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/libvorbis.txt",
             "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/WASM_ENCODER_NOTICE.txt"
@@ -89,6 +92,9 @@ jobs:
               "LICENSES.chromium.html",
               "THIRD_PARTY_LICENSES/Inter.txt",
               "THIRD_PARTY_LICENSES/NPM_RUNTIME_NOTICES.txt",
+              "THIRD_PARTY_LICENSES/Emscripten.txt",
+              "THIRD_PARTY_LICENSES/musl.txt",
+              "THIRD_PARTY_LICENSES/compiler-rt.txt",
               "THIRD_PARTY_LICENSES/libogg.txt",
               "THIRD_PARTY_LICENSES/libvorbis.txt",
               "THIRD_PARTY_LICENSES/WASM_ENCODER_NOTICE.txt"
@@ -154,6 +160,9 @@ jobs:
           test -f "$resources/DISTRIBUTION_NOTICES.txt"
           test -f "$resources/THIRD_PARTY_LICENSES/Inter.txt"
           test -f "$resources/THIRD_PARTY_LICENSES/NPM_RUNTIME_NOTICES.txt"
+          test -f "$resources/THIRD_PARTY_LICENSES/Emscripten.txt"
+          test -f "$resources/THIRD_PARTY_LICENSES/musl.txt"
+          test -f "$resources/THIRD_PARTY_LICENSES/compiler-rt.txt"
           test -f "$resources/THIRD_PARTY_LICENSES/libogg.txt"
           test -f "$resources/THIRD_PARTY_LICENSES/libvorbis.txt"
           test -f "$resources/THIRD_PARTY_LICENSES/WASM_ENCODER_NOTICE.txt"

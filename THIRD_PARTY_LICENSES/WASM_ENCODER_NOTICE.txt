@@ -10,6 +10,12 @@ Their full license texts are included as libogg.txt and libvorbis.txt.
 wasm-media-encoders itself is MIT licensed and is covered by
 NPM_RUNTIME_NOTICES.txt.
 
+The Ogg WASM was built using Emscripten SDK 2.0.8, commit
+7b87f0b97aaf0a213d8d164d042e6bbc53fd0f7a. The generated WASM includes linked
+runtime components from Emscripten, musl libc, and compiler-rt; it does not
+include the complete Emscripten SDK. Their license texts are included as
+Emscripten.txt, musl.txt, and compiler-rt.txt.
+
 The upstream wasm-media-encoders package also contains an MP3/LAME encoder,
 but GP2SNG does not intentionally use or distribute that encoder. Production
 bundle validation requires the Ogg WASM payload to be present and the MP3/LAME

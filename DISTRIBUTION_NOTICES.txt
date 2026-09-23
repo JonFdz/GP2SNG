@@ -15,7 +15,8 @@ corresponding GitHub source archive for that tag.
 
 Application and runtime third-party license notices are shipped in
 THIRD_PARTY_LICENSES/. These include notices for wasm-media-encoders and its
-libogg and libvorbis Ogg/Vorbis components.
+libogg and libvorbis Ogg/Vorbis components, plus linked Emscripten, musl libc,
+and compiler-rt runtime components in the generated WASM.
 
 The packaged Electron runtime license is in LICENSE.electron.txt. Chromium and
 Electron-introduced bundled third-party credits are in LICENSES.chromium.html.
