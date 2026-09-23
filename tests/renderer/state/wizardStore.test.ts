@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { applyOverrides } from '../../../src/renderer/src/playback/overrides';
 import { buildActionLog } from '../../../src/renderer/src/state/actionLog';
 import { outputFilename } from '../../../src/renderer/src/state/outputFilename';
 import { canAdvance, useWizardStore } from '../../../src/renderer/src/state/wizardStore';
@@ -14,6 +15,7 @@ import {
   type SessionBlob,
   SessionRestoreError,
   type YargChart,
+  type YargNote,
 } from '../../../src/shared/types/index';
 
 function track(id: number, isDrumKit: boolean, noteCount: number): ParsedGpTrack {
@@ -50,6 +52,10 @@ const editBaseChart: YargChart = {
     { tick: 1440, note: 'red', dynamic: 'accent', midi: 39 },
   ],
 };
+
+function chartWithNotes(notes: YargNote[]): YargChart {
+  return { ...editBaseChart, notes };
+}
 
 function blob(): SessionBlob {
   return {
@@ -683,6 +689,166 @@ describe('wizardStore no-op overrides', () => {
   });
 });
 
+describe('setConversion override reconciliation', () => {
+  test('removes an explicit override made redundant by the new raw chart and its Action Log row', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'neutral' });
+    const before = useWizardStore.getState();
+    expect(
+      buildActionLog({
+        overrides: before.overrides,
+        deletions: before.deletions,
+        previewRemaps: before.previewRemaps,
+        barStarts: [0],
+      }),
+    ).toHaveLength(1);
+
+    useWizardStore
+      .getState()
+      .setConversion(
+        chartWithNotes([{ tick: 0, note: 'blueTom', dynamic: 'neutral', midi: 38 }]),
+        [],
+      );
+
+    const state = useWizardStore.getState();
+    expect(state.overrides).toEqual([]);
+    expect(
+      buildActionLog({
+        overrides: state.overrides,
+        deletions: state.deletions,
+        previewRemaps: state.previewRemaps,
+        barStarts: [0],
+      }),
+    ).toEqual([]);
+  });
+
+  test('keeps an explicit override when the lane matches but the dynamic still differs', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'ghost' });
+
+    useWizardStore
+      .getState()
+      .setConversion(
+        chartWithNotes([{ tick: 0, note: 'blueTom', dynamic: 'neutral', midi: 38 }]),
+        [],
+      );
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'blueTom',
+      dynamic: 'ghost',
+    });
+  });
+
+  test('keeps an explicit override when the dynamic matches but the lane still differs', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'ghost' });
+
+    useWizardStore
+      .getState()
+      .setConversion(chartWithNotes([{ tick: 0, note: 'red', dynamic: 'ghost', midi: 38 }]), []);
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'blueTom',
+      dynamic: 'ghost',
+    });
+  });
+
+  test('removes an explicit override when the raw note disappears', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'neutral' });
+
+    useWizardStore.getState().setConversion(chartWithNotes([]), []);
+
+    expect(useWizardStore.getState().overrides).toEqual([]);
+  });
+
+  test('normalizes orange to neutral before reconciling it with the raw chart', () => {
+    useWizardStore
+      .getState()
+      .setConversion(chartWithNotes([{ tick: 0, note: 'red', dynamic: 'neutral', midi: 38 }]), []);
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'orange', dynamic: 'accent' });
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'orange',
+      dynamic: 'neutral',
+    });
+
+    useWizardStore
+      .getState()
+      .setConversion(
+        chartWithNotes([{ tick: 0, note: 'orange', dynamic: 'neutral', midi: 38 }]),
+        [],
+      );
+
+    expect(useWizardStore.getState().overrides).toEqual([]);
+  });
+
+  test('reconciles redundant and missing overrides while retaining unrelated active overrides', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueTom', dynamic: 'neutral' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 480, midi: 40, note: 'blueTom', dynamic: 'accent' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 1440, midi: 39, note: 'blueTom', dynamic: 'neutral' });
+
+    useWizardStore.getState().setConversion(
+      chartWithNotes([
+        { tick: 0, note: 'blueTom', dynamic: 'neutral', midi: 38 },
+        { tick: 480, note: 'red', dynamic: 'ghost', midi: 40 },
+      ]),
+      [],
+    );
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      tick: 480,
+      midi: 40,
+      note: 'blueTom',
+      dynamic: 'accent',
+    });
+  });
+
+  test('preserves legacy overrides verbatim and keeps their existing semantics', () => {
+    const legacyBlob: SessionBlob = {
+      ...blob(),
+      chart: editBaseChart,
+      overrides: [
+        { tick: 0, midi: 38, note: 'greenTom', accented: true, seq: 4 },
+        { tick: 480, midi: 40, note: 'blueTom', accented: false, seq: 5 },
+      ],
+    };
+    useWizardStore.getState().restoreSession({
+      sngFilePath: 'C:/songs/Song - Artist.sng',
+      gpFilePath: 'C:/songs/song.gp',
+      gpFileBytes: GP_BYTES,
+      score: score([track(3, true, 40)]),
+      blob: legacyBlob,
+      audioBytes: new Uint8Array([9, 9, 9]),
+    });
+    const nextChart = chartWithNotes([
+      { tick: 0, note: 'red', dynamic: 'neutral', midi: 38 },
+      { tick: 480, note: 'red', dynamic: 'ghost', midi: 40 },
+    ]);
+
+    useWizardStore.getState().setConversion(nextChart, []);
+
+    expect(useWizardStore.getState().overrides).toEqual(legacyBlob.overrides);
+    expect(applyOverrides(nextChart.notes, useWizardStore.getState().overrides)).toEqual([
+      { tick: 0, note: 'greenTom', dynamic: 'accent', midi: 38 },
+      { tick: 480, note: 'blueTom', dynamic: 'ghost', midi: 40 },
+    ]);
+  });
+});
+
 describe('canAdvance', () => {
   test('load requires a loaded score and a selected track with notes', () => {
     const sc = score([track(0, true, 10), track(1, true, 0)]);
@@ -733,8 +899,10 @@ describe('wizardStore action-log edits', () => {
     if (currentMap === null) throw new Error('Expected a restored session map.');
     const revert = applyRemap(currentMap, 51, 'blueCymbal');
     useWizardStore.getState().removePreviewRemap(51, revert);
+    useWizardStore.getState().setConversion(restoredChart, []);
     expect(useWizardStore.getState().previewRemaps).toEqual([]);
     expect(useWizardStore.getState().sessionMap).toBe(revert);
+    expect(useWizardStore.getState().chart).toEqual(restoredChart);
   });
 
   test('restored legacy previewRemaps clear on setSessionMap, toggleTrack, and reset', () => {

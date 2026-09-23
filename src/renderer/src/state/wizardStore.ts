@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import type {
   AlbumArt,
+  BaseYargNote,
   ConversionSettings,
   ConversionWarning,
   CymbalPriorities,
+  DrumDynamic,
   ExplicitNoteOverride,
   MidiMap,
   NoteRef,
@@ -14,6 +16,7 @@ import type {
   SessionBlob,
   SongMetadata,
   YargChart,
+  YargNote,
 } from '../../../shared/types/index';
 
 import {
@@ -99,6 +102,33 @@ function nextSeq(s: WizardState): number {
   return max + 1;
 }
 
+function noteKey(note: { tick: number; midi: number }): string {
+  return `${note.tick}:${note.midi}`;
+}
+
+function effectiveDynamic(note: BaseYargNote, dynamic: DrumDynamic): DrumDynamic {
+  return note === 'orange' ? 'neutral' : dynamic;
+}
+
+function explicitOverrideMatchesBase(override: ExplicitNoteOverride, base: YargNote): boolean {
+  return (
+    override.note === base.note &&
+    effectiveDynamic(override.note, override.dynamic) === effectiveDynamic(base.note, base.dynamic)
+  );
+}
+
+function reconcileExplicitOverrides(
+  notes: readonly YargNote[],
+  overrides: readonly SeqOverride[],
+): SeqOverride[] {
+  const baseByKey = new Map(notes.map((note) => [noteKey(note), note]));
+  return overrides.filter((override) => {
+    if (override.dynamic === undefined) return true;
+    const base = baseByKey.get(noteKey(override));
+    return base !== undefined && !explicitOverrideMatchesBase(override, base);
+  });
+}
+
 // Everything scoped to converting one song (docs/DESIGN.md → Architecture → State
 // model). Task 24 populated the Load/Track fields; Task 25 adds the session map,
 // its dirty flag (feeds the "Update global MIDI map?" prompt), and the converted
@@ -149,7 +179,7 @@ export interface WizardState {
   metronomeOn: boolean; // preview metronome toggle (view-only preference)
   metronomeVolume: number; // preview metronome click level, 1 = 100% (view-only preference)
   overrides: SeqOverride[]; // one-off reassigns applied on top of the chart
-  deletions: SeqDeletion[]; // gems removed from the displayed chart (Delete gem / unassign)
+  deletions: SeqDeletion[]; // individual gems removed with Delete gem
   previewRemaps: PreviewRemap[]; // restored legacy global Preview remaps; never created anew
 
   // Load a freshly parsed score. Auto-selects all drum-kit tracks (FUNCTIONALITY step
@@ -371,9 +401,14 @@ export const useWizardStore = create<WizardState>((set) => ({
       warnings: [],
     })),
   // Every converter caller supplies an unadjusted GP chart. This single path
-  // reapplies the session's absolute correction after remaps and mapping edits.
+  // reconciles explicit overrides against it, then reapplies the session's
+  // absolute tempo correction. Legacy overrides are preserved verbatim.
   setConversion: (chart, warnings) =>
-    set((s) => ({ chart: scaleChartTempo(chart, 1, s.tempoScale), warnings })),
+    set((s) => ({
+      chart: scaleChartTempo(chart, 1, s.tempoScale),
+      warnings,
+      overrides: reconcileExplicitOverrides(chart.notes, s.overrides),
+    })),
   setTempoScale: (tempoScale) =>
     set((s) => {
       if (s.chart === null) throw new Error('Convert a chart before adjusting tempo.');
@@ -399,19 +434,19 @@ export const useWizardStore = create<WizardState>((set) => ({
   // converted note removes that keyed edit instead of retaining a no-op row.
   addOverride: (override) =>
     set((s) => {
-      const dynamic = override.note === 'orange' ? 'neutral' : override.dynamic;
+      const nextOverride: ExplicitNoteOverride = {
+        ...override,
+        dynamic: effectiveDynamic(override.note, override.dynamic),
+      };
       const remaining = s.overrides.filter(
         (o) => o.tick !== override.tick || o.midi !== override.midi,
       );
-      const base = s.chart?.notes.find(
-        (note) => note.tick === override.tick && note.midi === override.midi,
-      );
-      const baseDynamic = base?.note === 'orange' ? 'neutral' : base?.dynamic;
-      if (base !== undefined && base.note === override.note && baseDynamic === dynamic) {
+      const base = s.chart?.notes.find((note) => noteKey(note) === noteKey(override));
+      if (base !== undefined && explicitOverrideMatchesBase(nextOverride, base)) {
         return { overrides: remaining };
       }
       return {
-        overrides: [...remaining, { ...override, dynamic, seq: nextSeq(s) }],
+        overrides: [...remaining, { ...nextOverride, seq: nextSeq(s) }],
       };
     }),
   // A gem may be deleted once; a repeat delete of the same (tick, midi) is a no-op.
