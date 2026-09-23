@@ -40,7 +40,7 @@ display, not its original absolute filesystem path.
 
 ## License
 
-GP2SNG is free software licensed under [GNU GPL version 3 or later](LICENSE). The corresponding source is available in this repository. Bundled third-party notices are in [`THIRD_PARTY_LICENSES/`](THIRD_PARTY_LICENSES/).
+GP2SNG is free software licensed under [GNU GPL version 3 or later](LICENSE). The corresponding source is available in this repository. Distribution information is in [`DISTRIBUTION_NOTICES.txt`](DISTRIBUTION_NOTICES.txt), and bundled third-party notices are in [`THIRD_PARTY_LICENSES/`](THIRD_PARTY_LICENSES/).
 
 Originally created by Alexander Celeste.
 

@@ -1,0 +1,22 @@
+WASM Ogg/Vorbis encoder provenance
+
+GP2SNG uses wasm-media-encoders@0.7.0 and only its Ogg Vorbis encoder path.
+The Ogg WASM distributed by that package was built from:
+
+- libogg 1.3.4, commit bada45718453ac27b56773ae663f7e65112f6a6e
+- libvorbis 1.3.7, commit 0657aee69dec8508a0011f47f3b69d7538e9d262
+
+Their full license texts are included as libogg.txt and libvorbis.txt.
+wasm-media-encoders itself is MIT licensed and is covered by
+NPM_RUNTIME_NOTICES.txt.
+
+The Ogg WASM was built using Emscripten SDK 2.0.8, commit
+7b87f0b97aaf0a213d8d164d042e6bbc53fd0f7a. The generated WASM includes linked
+runtime components from Emscripten, musl libc, and compiler-rt; it does not
+include the complete Emscripten SDK. Their license texts are included as
+Emscripten.txt, musl.txt, and compiler-rt.txt.
+
+The upstream wasm-media-encoders package also contains an MP3/LAME encoder,
+but GP2SNG does not intentionally use or distribute that encoder. Production
+bundle validation requires the Ogg WASM payload to be present and the MP3/LAME
+WASM payload to be absent.
