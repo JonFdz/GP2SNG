@@ -8,7 +8,15 @@ const parser = new XMLParser({
   parseTagValue: false, // keep all text as strings; we parse numbers ourselves
   parseAttributeValue: false,
   trimValues: true, // trims the newline whitespace GP wraps around CDATA
-  processEntities: true,
+  processEntities: {
+    enabled: true,
+    maxEntitySize: 64 * 1024,
+    maxExpansionDepth: 32,
+    maxTotalExpansions: 100_000,
+    maxExpandedLength: 16 * 1024 * 1024,
+    maxEntityCount: 256,
+  },
+  maxNestedTags: 256,
 });
 
 export function parseXml(xml: string): XmlNode {

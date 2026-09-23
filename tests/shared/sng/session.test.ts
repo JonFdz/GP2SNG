@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertEmbeddedGpBase64Length,
   buildMidi,
   buildSngContainer,
   decodeSessionBlob,
@@ -170,6 +171,55 @@ describe('session blob codec', () => {
     delete map.greenTomAccented;
     const bytes = new TextEncoder().encode(JSON.stringify(parsed));
     expect(() => decodeSessionBlob(bytes)).toThrow(SessionRestoreError);
+  });
+
+  it('accepts the tuple-shaped position fraction in a normal three-hand warning', () => {
+    const parsed = reparse(sampleBlob());
+    parsed.warnings = [
+      {
+        kind: 'threeHandNotes',
+        message: 'overlap',
+        context: { bar: 1, midi: [38, 42, 47], positionFrac: [1, 4] },
+      },
+    ];
+    expect(() => decodeSessionBlob(new TextEncoder().encode(JSON.stringify(parsed)))).not.toThrow();
+  });
+
+  it.each([
+    ['gpFilePath', 42],
+    ['sessionSettings', { ...DEFAULT_CONVERSION_SETTINGS, graceNoteSpacing: '128th' }],
+    ['warnings', [{ kind: 'unknown', message: 'x' }]],
+    ['overrides', [{ tick: 0, midi: 38, note: 'purple', accented: false, seq: 1 }]],
+    ['deletions', [{ tick: Number.NaN, midi: 38, seq: 1 }]],
+    ['previewRemaps', [{ midi: 38, from: 'red', to: 'purple', seq: 1 }]],
+    ['metadata', { ...metadata, drumsDifficulty: 99 }],
+    ['audioOffsetMs', Number.POSITIVE_INFINITY],
+    ['audioPaddingMs', -1],
+  ])('refuses malformed session member %s', (member, value) => {
+    const parsed = reparse(sampleBlob());
+    parsed[member] = value;
+    expect(() => decodeSessionBlob(new TextEncoder().encode(JSON.stringify(parsed)))).toThrow(
+      SessionRestoreError,
+    );
+  });
+
+  it.each([
+    { ...chart, tempoMap: [{ tick: 0, usPerQuarter: 0 }] },
+    { ...chart, notes: [{ tick: 0, note: 'purple', dynamic: 'neutral', midi: 38 }] },
+    { ...chart, notes: [{ tick: 0, note: 'red', dynamic: 'loud', midi: 38 }] },
+    { ...chart, sections: [{ tick: -1, name: 'Bad' }] },
+  ])('refuses a malformed chart structure', (badChart) => {
+    const parsed = reparse(sampleBlob());
+    parsed.chart = badChart;
+    expect(() => decodeSessionBlob(new TextEncoder().encode(JSON.stringify(parsed)))).toThrow(
+      SessionRestoreError,
+    );
+  });
+
+  it('rejects an embedded GP payload whose encoded length proves it exceeds 50 MiB', () => {
+    expect(() => assertEmbeddedGpBase64Length(Math.ceil((50 * 1024 * 1024) / 3) * 4 + 4)).toThrow(
+      SessionRestoreError,
+    );
   });
 
   it('round-trips audioPaddingMs', () => {

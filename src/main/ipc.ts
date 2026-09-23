@@ -1,6 +1,5 @@
 import { access, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { app, dialog, ipcMain } from 'electron';
+import { app, dialog, type IpcMainInvokeEvent, ipcMain } from 'electron';
 import type { MidiMap, PersistedSettings } from '../shared/types/index';
 import {
   readGlobalMap,
@@ -9,12 +8,36 @@ import {
   writeGlobalMap,
   writeSettings,
 } from './persistence';
+import {
+  assertFileSize,
+  isTrustedRendererUrl,
+  MAX_GP_FILE_BYTES,
+  MAX_SNG_FILE_BYTES,
+  resolveSafeSngOutputPath,
+} from './security';
+
+type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
+
+function registerTrustedHandler(channel: string, expectedRenderer: URL, handler: Handler): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (
+      event.senderFrame === null ||
+      event.senderFrame !== event.sender.mainFrame ||
+      !isTrustedRendererUrl(event.senderFrame.url, expectedRenderer)
+    ) {
+      throw new Error('Rejected IPC call from an untrusted renderer.');
+    }
+    return handler(event, ...args);
+  });
+}
 
 // Registers every window.gp2sng channel. Call exactly once, after app ready.
-export function registerIpcHandlers(): void {
+export function registerIpcHandlers(expectedRenderer: URL): void {
   const dataDir = resolveDataDir(app.isPackaged, process.platform, app.getPath('userData'));
+  const handle = (channel: string, handler: Handler) =>
+    registerTrustedHandler(channel, expectedRenderer, handler);
 
-  ipcMain.handle('loadGpFile', async () => {
+  handle('loadGpFile', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Load Guitar Pro file',
       properties: ['openFile'],
@@ -22,10 +45,11 @@ export function registerIpcHandlers(): void {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     const path = result.filePaths[0];
+    await assertFileSize(path, MAX_GP_FILE_BYTES, 'Guitar Pro file');
     return { path, bytes: new Uint8Array(await readFile(path)) };
   });
 
-  ipcMain.handle('loadSngFile', async () => {
+  handle('loadSngFile', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Load prior GP2SNG conversion',
       properties: ['openFile'],
@@ -33,10 +57,11 @@ export function registerIpcHandlers(): void {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     const path = result.filePaths[0];
+    await assertFileSize(path, MAX_SNG_FILE_BYTES, 'SNG file');
     return { path, bytes: new Uint8Array(await readFile(path)) };
   });
 
-  ipcMain.handle('chooseOutputDir', async () => {
+  handle('chooseOutputDir', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Choose output directory',
       properties: ['openDirectory', 'createDirectory'],
@@ -45,23 +70,25 @@ export function registerIpcHandlers(): void {
     return result.filePaths[0];
   });
 
-  ipcMain.handle('pathExists', async (_event, dir: string, filename: string) => {
+  handle('pathExists', async (_event, dir, filename) => {
+    const target = resolveSafeSngOutputPath(dir, filename);
     try {
-      await access(join(dir, filename));
+      await access(target);
       return true;
     } catch {
       return false;
     }
   });
 
-  ipcMain.handle('writeSng', async (_event, dir: string, filename: string, bytes: Uint8Array) => {
-    await writeFile(join(dir, filename), bytes);
+  handle('writeSng', async (_event, dir, filename, bytes) => {
+    if (!(bytes instanceof Uint8Array)) throw new Error('SNG data must be binary.');
+    await writeFile(resolveSafeSngOutputPath(dir, filename), bytes);
   });
 
-  ipcMain.handle('readSettings', () => readSettings(dataDir));
-  ipcMain.handle('writeSettings', (_event, patch: Partial<PersistedSettings>) =>
-    writeSettings(dataDir, patch),
+  handle('readSettings', () => readSettings(dataDir));
+  handle('writeSettings', (_event, patch) =>
+    writeSettings(dataDir, patch as Partial<PersistedSettings>),
   );
-  ipcMain.handle('readGlobalMap', () => readGlobalMap(dataDir));
-  ipcMain.handle('writeGlobalMap', (_event, map: MidiMap) => writeGlobalMap(dataDir, map));
+  handle('readGlobalMap', () => readGlobalMap(dataDir));
+  handle('writeGlobalMap', (_event, map) => writeGlobalMap(dataDir, map as MidiMap));
 }

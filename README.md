@@ -14,7 +14,7 @@ Windows and macOS builds are currently unsigned. Windows SmartScreen may warn ab
 
 ## Build from source
 
-**Prerequisites:** [Node.js](https://nodejs.org/) 20 or newer (includes npm) and [Git](https://git-scm.com/).
+**Prerequisites:** [Node.js](https://nodejs.org/) 24 LTS or newer (includes npm) and [Git](https://git-scm.com/).
 
 ```bash
 git clone https://github.com/JonFdz/GP2SNG.git
@@ -29,7 +29,7 @@ To generate all platform artifacts manually in GitHub Actions, open **Actions â†
 ## Usage
 
 1. Launch GP2SNG.
-2. Load a Guitar Pro file (`.gp`, `.gp5`, `.gpx`).
+2. Load a supported Guitar Pro file (`.gp`, using the GP7/GP8 ZIP/GPIF format).
 3. Map the drum track to YARG gems and preview the chart.
 4. Export the `.sng`.
 
