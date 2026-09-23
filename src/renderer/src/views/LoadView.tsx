@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { parseGp } from '../../../shared/gp/index';
 import { readSngSession } from '../../../shared/sng/index';
 import { hasSectionNames } from '../state/hasSectionNames';
+import { sourceFileName } from '../state/sourceFile';
 import { useWizardStore } from '../state/wizardStore';
 
 // Load step (FUNCTIONALITY steps 2-7): pick a GP file, parse it, load it into the
@@ -59,7 +60,7 @@ export function LoadView() {
     }
   }
 
-  const fileName = gpFilePath?.split(/[\\/]/).pop() ?? gpFilePath;
+  const fileName = gpFilePath === null ? null : sourceFileName(gpFilePath);
   const noteless =
     selectedTrackIds.length > 0 &&
     !score?.tracks.some((track) => selectedTrackIds.includes(track.id) && track.noteCount > 0);

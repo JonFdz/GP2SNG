@@ -132,6 +132,65 @@ describe('resolveHydration', () => {
   });
 });
 
+describe('hydrate', () => {
+  const initial = useSettingsStore.getState();
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useSettingsStore.setState(initial, true);
+  });
+
+  test('stays unhydrated until both persisted reads finish', async () => {
+    let finishSettings: ((value: unknown) => void) | undefined;
+    const settings = new Promise((resolve) => {
+      finishSettings = resolve;
+    });
+    vi.stubGlobal('window', {
+      gp2sng: {
+        readSettings: vi.fn().mockReturnValue(settings),
+        readGlobalMap: vi.fn().mockResolvedValue({
+          value: DEFAULT_MIDI_MAP,
+          failedToLoad: false,
+        }),
+      },
+    });
+    useSettingsStore.setState({ hydrated: false, loadFailed: false });
+
+    const hydrating = useSettingsStore.getState().hydrate();
+    expect(useSettingsStore.getState().hydrated).toBe(false);
+    finishSettings?.({
+      value: { ...DEFAULT_CONVERSION_SETTINGS, outputDir: '/charts' },
+      failedToLoad: false,
+    });
+    await hydrating;
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      hydrated: true,
+      loadFailed: false,
+      outputDir: '/charts',
+      conversionSettings: DEFAULT_CONVERSION_SETTINGS,
+      globalMap: DEFAULT_MIDI_MAP,
+    });
+  });
+
+  test('falls back and unblocks the app when an unexpected read rejects', async () => {
+    vi.stubGlobal('window', {
+      gp2sng: {
+        readSettings: vi.fn().mockRejectedValue(new Error('IPC unavailable')),
+        readGlobalMap: vi.fn().mockResolvedValue({
+          value: DEFAULT_MIDI_MAP,
+          failedToLoad: false,
+        }),
+      },
+    });
+    useSettingsStore.setState({ hydrated: false, loadFailed: false });
+
+    await useSettingsStore.getState().hydrate();
+
+    expect(useSettingsStore.getState()).toMatchObject({ hydrated: true, loadFailed: true });
+  });
+});
+
 describe('resetToDefaults', () => {
   const initial = useSettingsStore.getState();
   let writeSettings: ReturnType<typeof vi.fn>;

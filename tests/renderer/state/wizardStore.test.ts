@@ -849,6 +849,69 @@ describe('setConversion override reconciliation', () => {
   });
 });
 
+describe('setConversion deletion reconciliation', () => {
+  test('keeps a deletion when the same source identity still exists', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().deleteNote({ tick: 0, midi: 38 });
+
+    useWizardStore.getState().setConversion(editBaseChart, []);
+
+    expect(useWizardStore.getState().deletions).toMatchObject([{ tick: 0, midi: 38 }]);
+  });
+
+  test('keeps a deletion when lane and dynamic change but source identity does not', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().deleteNote({ tick: 0, midi: 38 });
+
+    useWizardStore
+      .getState()
+      .setConversion(
+        chartWithNotes([{ tick: 0, midi: 38, note: 'greenCymbal', dynamic: 'accent' }]),
+        [],
+      );
+
+    expect(useWizardStore.getState().deletions).toMatchObject([{ tick: 0, midi: 38 }]);
+  });
+
+  test('removes a deletion and its Action Log row when the raw source disappears', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().deleteNote({ tick: 0, midi: 38 });
+
+    useWizardStore.getState().setConversion(chartWithNotes([]), []);
+
+    const state = useWizardStore.getState();
+    expect(state.deletions).toEqual([]);
+    expect(
+      buildActionLog({
+        overrides: state.overrides,
+        deletions: state.deletions,
+        previewRemaps: state.previewRemaps,
+        barStarts: [0],
+      }),
+    ).toEqual([]);
+  });
+
+  test('reconciles multiple deletions independently', () => {
+    useWizardStore.getState().setConversion(editBaseChart, []);
+    useWizardStore.getState().deleteNote({ tick: 0, midi: 38 });
+    useWizardStore.getState().deleteNote({ tick: 480, midi: 40 });
+    useWizardStore.getState().deleteNote({ tick: 960, midi: 36 });
+
+    useWizardStore.getState().setConversion(
+      chartWithNotes([
+        { tick: 0, midi: 38, note: 'blueTom', dynamic: 'ghost' },
+        { tick: 960, midi: 36, note: 'orange', dynamic: 'neutral' },
+      ]),
+      [],
+    );
+
+    expect(useWizardStore.getState().deletions).toMatchObject([
+      { tick: 0, midi: 38 },
+      { tick: 960, midi: 36 },
+    ]);
+  });
+});
+
 describe('canAdvance', () => {
   test('load requires a loaded score and a selected track with notes', () => {
     const sc = score([track(0, true, 10), track(1, true, 0)]);

@@ -6,6 +6,7 @@ import type { YargChart } from '../../../shared/types/index';
 import { resolveFinalizeAudio } from '../audio/index';
 import { MetadataForm } from '../components/MetadataForm';
 import { displayedNotes } from '../playback/overrides';
+import { isFileWithinSizeLimit, MAX_ALBUM_ART_FILE_BYTES } from '../state/fileSelection';
 import { defaultMetadata, isMetadataValid, metadataErrors } from '../state/metadata';
 import {
   automaticOutputFilenameBase,
@@ -51,7 +52,11 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const setOutputDir = useSettingsStore((s) => s.setOutputDir);
 
   const [saveDir, setSaveDir] = useState(outputDir ?? '');
-  const [pendingSave, setPendingSave] = useState<{ dir: string; filename: string } | null>(null);
+  const [pendingSave, setPendingSave] = useState<{
+    dir: string;
+    filename: string;
+    revision: number;
+  } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,6 +64,8 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const [albumArtLoading, setAlbumArtLoading] = useState(false);
   const [albumArtUrl, setAlbumArtUrl] = useState<string | null>(null);
   const albumArtInputRef = useRef<HTMLInputElement>(null);
+  const editRevisionRef = useRef(0);
+  const saveAttemptActiveRef = useRef(false);
 
   // Seed the metadata form from the parsed score on first entry.
   useEffect(() => {
@@ -110,9 +117,39 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
   const filename = outputFilename(gpMetadata.name, gpMetadata.artist, outputFilenameOverride);
   const filenameError = outputFilenameOverride !== null && filename === null;
 
-  async function doWrite(dir: string, filename: string) {
+  function markUnsaved() {
+    editRevisionRef.current += 1;
+    setSaved(false);
+  }
+
+  function finishSaveAttempt() {
+    saveAttemptActiveRef.current = false;
+    setSaving(false);
+  }
+
+  function handleMetadataChange(patch: Parameters<typeof setMetadata>[0]) {
+    setMetadata(patch);
+    markUnsaved();
+  }
+
+  function handleOutputFilenameChange(value: string | null) {
+    setOutputFilenameOverride(value);
+    markUnsaved();
+  }
+
+  function handleClearAlbumArt() {
+    clearAlbumArt();
+    markUnsaved();
+  }
+
+  function handleSaveDirChange(next: string) {
+    if (next === saveDir) return;
+    setSaveDir(next);
+    markUnsaved();
+  }
+
+  async function doWrite(dir: string, filename: string, writeRevision: number) {
     setPendingSave(null);
-    setSaving(true);
     try {
       const displayedChart: YargChart = { ...gpChart, notes: displayed };
       const leadInMs = Math.round(
@@ -148,38 +185,66 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
         albumArt ?? undefined,
       );
       await window.gp2sng.writeSng(dir, filename, bytes);
-      setSaved(true);
+      if (editRevisionRef.current === writeRevision) setSaved(true);
       setSaveError(null);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save the .sng file.');
     } finally {
-      setSaving(false);
+      finishSaveAttempt();
     }
   }
 
   async function handleSave() {
-    if (filename === null || !isMetadataValid(gpMetadata)) return;
-    setSaveError(null);
-    let dir = saveDir.trim();
-    if (dir === '') {
-      const chosen = await window.gp2sng.chooseOutputDir();
-      if (chosen === null) return; // user cancelled
-      dir = chosen;
-      setSaveDir(chosen);
-      // First save with no configured directory: persist the choice so it becomes
-      // the default for every later conversion. Best-effort — a persistence failure
-      // must not block this save (the value is retained in-memory).
-      void setOutputDir(chosen).catch(() => {});
+    if (
+      filename === null ||
+      !isMetadataValid(gpMetadata) ||
+      saveAttemptActiveRef.current ||
+      pendingSave !== null
+    ) {
+      return;
     }
+    const saveRevision = editRevisionRef.current;
+    saveAttemptActiveRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+    let delegatedToWrite = false;
     try {
+      let dir = saveDir.trim();
+      if (dir === '') {
+        const chosen = await window.gp2sng.chooseOutputDir();
+        if (chosen === null || editRevisionRef.current !== saveRevision) return;
+        dir = chosen;
+        setSaveDir(chosen);
+        // First save with no configured directory: persist the choice so it becomes
+        // the default for every later conversion. Best-effort — a persistence failure
+        // must not block this save (the value is retained in-memory).
+        void setOutputDir(chosen).catch(() => {});
+      }
       if (await window.gp2sng.pathExists(dir, filename)) {
-        setPendingSave({ dir, filename });
+        if (editRevisionRef.current !== saveRevision) return;
+        setPendingSave({ dir, filename, revision: saveRevision });
         return;
       }
-      await doWrite(dir, filename);
+      if (editRevisionRef.current !== saveRevision) return;
+      delegatedToWrite = true;
+      await doWrite(dir, filename, saveRevision);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save the .sng file.');
+    } finally {
+      if (!delegatedToWrite) finishSaveAttempt();
     }
+  }
+
+  async function handleOverwrite() {
+    if (pendingSave === null || saveAttemptActiveRef.current) return;
+    if (editRevisionRef.current !== pendingSave.revision) {
+      setPendingSave(null);
+      return;
+    }
+    const save = pendingSave;
+    saveAttemptActiveRef.current = true;
+    setSaving(true);
+    await doWrite(save.dir, save.filename, save.revision);
   }
 
   async function handleAlbumArtFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -191,10 +256,15 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       setAlbumArtError('Choose a PNG or JPEG image.');
       return;
     }
+    if (!isFileWithinSizeLimit(file, MAX_ALBUM_ART_FILE_BYTES)) {
+      setAlbumArtError('Artwork file is too large. The maximum file size is 20 MiB.');
+      return;
+    }
     setAlbumArtLoading(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       setAlbumArt({ bytes, extension: extension === 'png' ? 'png' : 'jpg' });
+      markUnsaved();
       setAlbumArtError(null);
     } catch {
       setAlbumArtError('Could not read that image file. Pick a different file.');
@@ -208,7 +278,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
       <h1 className="view-title">Finalize</h1>
       <p className="view-hint">Review the song details and choose where to save the .sng file.</p>
 
-      <MetadataForm metadata={gpMetadata} errors={errors} onChange={setMetadata} />
+      <MetadataForm metadata={gpMetadata} errors={errors} onChange={handleMetadataChange} />
 
       <section className="save-section">
         <div className="save-section__dir">
@@ -232,7 +302,7 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 <button
                   type="button"
                   className="btn btn--destructive"
-                  onClick={clearAlbumArt}
+                  onClick={handleClearAlbumArt}
                   disabled={albumArtLoading}
                 >
                   Remove
@@ -266,14 +336,14 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
                 value={filenameBase}
                 aria-invalid={filenameError}
                 aria-describedby={filenameError ? 'output-filename-error' : undefined}
-                onChange={(e) => setOutputFilenameOverride(withoutSngExtension(e.target.value))}
+                onChange={(e) => handleOutputFilenameChange(withoutSngExtension(e.target.value))}
               />
               <span className="save-section__extension">.sng</span>
               <button
                 type="button"
                 className="btn"
                 disabled={outputFilenameOverride === null}
-                onClick={() => setOutputFilenameOverride(null)}
+                onClick={() => handleOutputFilenameChange(null)}
               >
                 Reset
               </button>
@@ -295,14 +365,14 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
               className="text-input"
               value={saveDir}
               placeholder="Choose an output directory"
-              onChange={(e) => setSaveDir(e.target.value)}
+              onChange={(e) => handleSaveDirChange(e.target.value)}
             />
             <button
               type="button"
               className="btn"
               onClick={async () => {
                 const dir = await window.gp2sng.chooseOutputDir();
-                if (dir !== null) setSaveDir(dir);
+                if (dir !== null) handleSaveDirChange(dir);
               }}
             >
               Browse…
@@ -354,7 +424,8 @@ export function FinalizeView({ footerSlot }: { footerSlot: HTMLElement | null })
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={() => doWrite(pendingSave.dir, pendingSave.filename)}
+                onClick={handleOverwrite}
+                disabled={saving}
               >
                 Overwrite
               </button>

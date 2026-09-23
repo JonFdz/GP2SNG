@@ -1,4 +1,5 @@
 import { SESSION_BLOB_VERSION, type SessionBlob } from '../../../shared/types/index';
+import { sourceFileName } from './sourceFile';
 
 export type BuildSessionBlobArgs = Omit<SessionBlob, 'version'>;
 
@@ -7,5 +8,9 @@ export type BuildSessionBlobArgs = Omit<SessionBlob, 'version'>;
 // invariant that matters most — `chart` here is the RAW conversion output, never
 // the displayed chart passed to `writeSng` — is unit-testable on its own.
 export function buildSessionBlob(args: BuildSessionBlobArgs): SessionBlob {
-  return { version: SESSION_BLOB_VERSION, ...args };
+  return {
+    version: SESSION_BLOB_VERSION,
+    ...args,
+    gpFilePath: sourceFileName(args.gpFilePath),
+  };
 }

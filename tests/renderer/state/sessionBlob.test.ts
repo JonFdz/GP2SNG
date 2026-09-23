@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { displayedNotes } from '../../../src/renderer/src/playback/overrides';
 import { buildSessionBlob } from '../../../src/renderer/src/state/sessionBlob';
+import { sourceFileName } from '../../../src/renderer/src/state/sourceFile';
 import { readSngSession, writeSng } from '../../../src/shared/sng/index';
 import {
   DEFAULT_CONVERSION_SETTINGS,
@@ -42,6 +43,14 @@ const metadata: SongMetadata = {
 };
 
 describe('buildSessionBlob', () => {
+  it.each([
+    ['/Users/jon/Tabs/Granite.gp', 'Granite.gp'],
+    ['C:\\Users\\Jon\\Tabs\\Granite.gp', 'Granite.gp'],
+    ['Granite.gp', 'Granite.gp'],
+  ])('extracts a cross-platform source filename from %s', (path, expected) => {
+    expect(sourceFileName(path)).toBe(expected);
+  });
+
   it('stamps the current version and passes every other field through unchanged', () => {
     const blob = buildSessionBlob({
       gpFilePath: 'C:/songs/song.gp',
@@ -59,6 +68,7 @@ describe('buildSessionBlob', () => {
       audioPaddingMs: 0,
     });
     expect(blob.version).toBe(SESSION_BLOB_VERSION);
+    expect(blob.gpFilePath).toBe('song.gp');
     expect(blob.chart).toBe(rawChart);
     expect(blob.overrides).toBe(overrides);
     expect(blob.deletions).toBe(deletions);
@@ -106,6 +116,7 @@ describe('buildSessionBlob', () => {
     const sngBytes = writeSng(displayedChart, metadata, audio, 0, session);
     const restored = readSngSession(sngBytes);
 
+    expect(restored.blob.gpFilePath).toBe('song.gp');
     expect(restored.blob.chart.notes).toEqual(rawChart.notes);
     expect(restored.blob.chart.notes).not.toEqual(displayed);
   });

@@ -72,6 +72,12 @@ describe('session blob codec', () => {
     expect(Array.from(decoded.gpBytes)).toEqual(Array.from(blob.gpBytes));
   });
 
+  it('keeps an absolute source path while decoding a legacy-compatible session', () => {
+    const decoded = decodeSessionBlob(encodeSessionBlob(sampleBlob()));
+
+    expect(decoded.gpFilePath).toBe('C:/songs/song.gp');
+  });
+
   it.each([true, false])('loads a legacy accented:%s override unchanged', (accented) => {
     const raw = reparse(sampleBlob());
     raw.overrides = [{ tick: 0, midi: 38, note: 'red', accented, seq: 1 }];
