@@ -52,7 +52,7 @@ function blob(): SessionBlob {
     sessionSettings: { ...DEFAULT_CONVERSION_SETTINGS, cymbalGhostNotes: true },
     chart: restoredChart,
     warnings: [],
-    overrides: [{ tick: 480, midi: 47, note: 'greenTom', accented: false, seq: 1 }],
+    overrides: [{ tick: 480, midi: 47, note: 'greenTom', dynamic: 'neutral', seq: 1 }],
     deletions: [{ tick: 960, midi: 42, seq: 2 }],
     previewRemaps: [{ midi: 51, from: 'blueCymbal', to: 'greenCymbal', seq: 3 }],
     metadata: {
@@ -329,7 +329,7 @@ describe('wizardStore session map + conversion', () => {
     useWizardStore
       .getState()
       .setSessionSettings({ ...DEFAULT_CONVERSION_SETTINGS, graceNoteSpacing: '32nd' });
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: false });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'neutral' });
     useWizardStore.getState().deleteNote({ tick: 0, midi: 42 });
     useWizardStore
       .getState()
@@ -428,14 +428,45 @@ describe('wizardStore preview state', () => {
   });
 
   test('addOverride replaces an existing override for the same (tick, midi)', () => {
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: true });
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'greenTom', accented: false });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'accent' });
     useWizardStore
       .getState()
-      .addOverride({ tick: 480, midi: 47, note: 'blueTom', accented: false });
+      .addOverride({ tick: 0, midi: 38, note: 'greenTom', dynamic: 'neutral' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 480, midi: 47, note: 'blueTom', dynamic: 'neutral' });
     const ovs = useWizardStore.getState().overrides;
     expect(ovs).toHaveLength(2);
-    expect(ovs.find((o) => o.tick === 0 && o.midi === 38)?.note).toBe('greenTom');
+    expect(ovs.find((o) => o.tick === 0 && o.midi === 38)).toMatchObject({
+      note: 'greenTom',
+      dynamic: 'neutral',
+    });
+  });
+
+  test('addOverride keeps one effective lane and dynamic edit for a note', () => {
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'greenTom', dynamic: 'ghost' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueCymbal', dynamic: 'ghost' });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'blueCymbal', dynamic: 'accent' });
+
+    expect(useWizardStore.getState().overrides).toHaveLength(1);
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'blueCymbal',
+      dynamic: 'accent',
+    });
+  });
+
+  test('addOverride normalizes orange to neutral', () => {
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'orange', dynamic: 'accent' });
+    expect(useWizardStore.getState().overrides[0]).toMatchObject({
+      note: 'orange',
+      dynamic: 'neutral',
+    });
   });
 
   test('deleteNote dedupes repeat deletes by (tick, midi)', () => {
@@ -458,7 +489,9 @@ describe('wizardStore preview state', () => {
       charter: 'C',
       drumsDifficulty: 3,
     });
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'greenTom', accented: false });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'greenTom', dynamic: 'neutral' });
     useWizardStore.getState().deleteNote({ tick: 4, midi: 40 });
     useWizardStore.getState().setAudioOffsetMs(120);
     useWizardStore.getState().setViewTime(9);
@@ -513,7 +546,9 @@ describe('wizardStore preview state', () => {
   test('selecting a different track clears chart-derived preview state', () => {
     const sc = score([track(0, true, 40), track(1, true, 10)]);
     useWizardStore.getState().loadScore('a.gp', GP_BYTES, sc);
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'greenTom', accented: false });
+    useWizardStore
+      .getState()
+      .addOverride({ tick: 0, midi: 38, note: 'greenTom', dynamic: 'neutral' });
     useWizardStore.getState().deleteNote({ tick: 4, midi: 40 });
     useWizardStore.getState().setViewTime(5);
 
@@ -577,17 +612,17 @@ describe('canAdvance', () => {
 
 describe('wizardStore action-log edits', () => {
   test('edits carry increasing recency stamps', () => {
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: false });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'neutral' });
     useWizardStore.getState().deleteNote({ tick: 480, midi: 47 });
     const { overrides, deletions } = useWizardStore.getState();
     expect(deletions[0].seq).toBeGreaterThan(overrides[0].seq);
   });
 
   test('removeOverride removes exactly the keyed override', () => {
-    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', accented: false });
+    useWizardStore.getState().addOverride({ tick: 0, midi: 38, note: 'red', dynamic: 'neutral' });
     useWizardStore
       .getState()
-      .addOverride({ tick: 480, midi: 47, note: 'blueTom', accented: false });
+      .addOverride({ tick: 480, midi: 47, note: 'blueTom', dynamic: 'neutral' });
     useWizardStore.getState().removeOverride(0, 38);
     const ovs = useWizardStore.getState().overrides;
     expect(ovs).toHaveLength(1);

@@ -1,6 +1,13 @@
 import { useId } from 'react';
-import type { BaseYargNote } from '../../../shared/types/index';
-import { CONE_DARKEN, CONE_STOPS, CYLINDER_STOPS, darken, NEUTRAL_EDGE } from './noteShading';
+import type { BaseYargNote, DrumDynamic } from '../../../shared/types/index';
+import {
+  CONE_DARKEN,
+  CONE_STOPS,
+  CYLINDER_STOPS,
+  darken,
+  GHOST_DARKEN,
+  NEUTRAL_EDGE,
+} from './noteShading';
 import {
   ACCENT_SIDE_FRAC,
   CYMBAL_RIM_FRAC,
@@ -52,15 +59,22 @@ const ACCENT_WHITE = '#e6eaf0';
 // for kick/snare/tom rows, a rounded upward triangle for cymbal rows. A vertical gradient
 // gives pads cylindrical depth; cymbals get cone side-shading. Every pad carries left/right
 // side strips and every cymbal a bottom rim — white and wide for `accented`, light gray and
-// narrow otherwise — and accented cymbals add an accent-white apex cap (docs → Dynamics).
+// narrow otherwise — and accented cymbals add an accent-white apex cap. When a dynamic is
+// supplied, ghost swatches also reuse Preview's narrower, shorter, darker treatment.
 export function YargNoteSwatch({
   note,
   accented = false,
+  dynamic,
 }: {
   note: BaseYargNote;
   accented?: boolean;
+  dynamic?: DrumDynamic;
 }) {
-  const color = NOTE_COLORS[note];
+  const effectiveDynamic =
+    note === 'orange' ? 'neutral' : (dynamic ?? (accented ? 'accent' : 'neutral'));
+  const isGhost = effectiveDynamic === 'ghost';
+  const isAccent = effectiveDynamic === 'accent';
+  const color = isGhost ? darken(NOTE_COLORS[note], GHOST_DARKEN) : NOTE_COLORS[note];
   const coneShade = darken(color, CONE_DARKEN);
   const gradientId = useId();
   const coneId = useId();
@@ -69,13 +83,19 @@ export function YargNoteSwatch({
   const clipId = useId();
   const cymClipId = useId();
   const cylinder = `url(#${gradientId})`;
-  const cymbalPath = cymbalPathData(12, 2, 10, 15);
-  const edgeColor = accented ? ACCENT_WHITE : NEUTRAL_EDGE;
-  const strip = 20 * (accented ? ACCENT_SIDE_FRAC : NEUTRAL_SIDE_FRAC);
-  const rimColor = accented ? ACCENT_WHITE : NEUTRAL_EDGE;
+  const width = isGhost ? 10 : 20;
+  const left = 12 - width / 2;
+  const cymbalTop = isGhost ? 4.6 : 2;
+  const cymbalHalf = isGhost ? 5 : 10;
+  const cymbalPath = cymbalPathData(12, cymbalTop, cymbalHalf, 15);
+  const edgeColor = isAccent ? ACCENT_WHITE : NEUTRAL_EDGE;
+  const strip = width * (isAccent ? ACCENT_SIDE_FRAC : NEUTRAL_SIDE_FRAC);
+  const rimColor = isAccent ? ACCENT_WHITE : NEUTRAL_EDGE;
   const rimConeShade = darken(rimColor, CONE_DARKEN);
-  const rimPath = pathData(cymbalRimBand(12, 2, 10, 15, (15 - 2) * CYMBAL_RIM_FRAC));
-  const capPath = pathData(cymbalCapPath(12, 2, 10, 15));
+  const rimPath = pathData(
+    cymbalRimBand(12, cymbalTop, cymbalHalf, 15, (15 - cymbalTop) * CYMBAL_RIM_FRAC),
+  );
+  const capPath = pathData(cymbalCapPath(12, cymbalTop, cymbalHalf, 15));
   return (
     <svg className="swatch" viewBox="0 0 24 16" width="24" height="16" aria-hidden="true">
       <defs>
@@ -118,7 +138,7 @@ export function YargNoteSwatch({
           ))}
         </linearGradient>
         <clipPath id={clipId}>
-          <rect x="2" y="4" width="20" height="10" rx="2" />
+          <rect x={left} y="4" width={width} height="10" rx="2" />
         </clipPath>
         <clipPath id={cymClipId}>
           <path d={cymbalPath} />
@@ -132,14 +152,20 @@ export function YargNoteSwatch({
             <path d={rimPath} fill={rimColor} />
             <path d={rimPath} fill={`url(#${rimConeId})`} />
           </g>
-          {accented && <path d={capPath} fill={ACCENT_WHITE} />}
+          {isAccent && <path d={capPath} fill={ACCENT_WHITE} />}
         </>
       ) : (
         <>
-          <rect x="2" y="4" width="20" height="10" rx="2" fill={cylinder} />
+          <rect x={left} y="4" width={width} height="10" rx="2" fill={cylinder} />
           <g clipPath={`url(#${clipId})`}>
-            <rect x="2" y="4" width={strip} height="10" fill={`url(#${edgeGradId})`} />
-            <rect x={22 - strip} y="4" width={strip} height="10" fill={`url(#${edgeGradId})`} />
+            <rect x={left} y="4" width={strip} height="10" fill={`url(#${edgeGradId})`} />
+            <rect
+              x={left + width - strip}
+              y="4"
+              width={strip}
+              height="10"
+              fill={`url(#${edgeGradId})`}
+            />
           </g>
         </>
       )}

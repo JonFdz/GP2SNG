@@ -55,7 +55,7 @@ function sampleBlob(): SessionBlob {
     sessionSettings: DEFAULT_CONVERSION_SETTINGS,
     chart,
     warnings: [],
-    overrides: [{ tick: 480, midi: 47, note: 'greenTom', accented: false, seq: 1 }],
+    overrides: [{ tick: 480, midi: 47, note: 'greenTom', dynamic: 'neutral', seq: 1 }],
     deletions: [{ tick: 960, midi: 42, seq: 2 }],
     previewRemaps: [{ midi: 51, from: 'blueCymbal', to: 'greenCymbal', seq: 3 }],
     metadata,
@@ -70,6 +70,21 @@ describe('session blob codec', () => {
     const decoded = decodeSessionBlob(encodeSessionBlob(blob));
     expect(decoded).toEqual(blob);
     expect(Array.from(decoded.gpBytes)).toEqual(Array.from(blob.gpBytes));
+  });
+
+  it.each([true, false])('loads a legacy accented:%s override unchanged', (accented) => {
+    const raw = reparse(sampleBlob());
+    raw.overrides = [{ tick: 0, midi: 38, note: 'red', accented, seq: 1 }];
+    const decoded = decodeSessionBlob(new TextEncoder().encode(JSON.stringify(raw)));
+    expect(decoded.overrides).toEqual([{ tick: 0, midi: 38, note: 'red', accented, seq: 1 }]);
+  });
+
+  it('rejects an explicit non-neutral orange override', () => {
+    const raw = reparse(sampleBlob());
+    raw.overrides = [{ tick: 0, midi: 38, note: 'orange', dynamic: 'ghost', seq: 1 }];
+    expect(() => decodeSessionBlob(new TextEncoder().encode(JSON.stringify(raw)))).toThrow(
+      SessionRestoreError,
+    );
   });
 
   it('writes version 3 and the array-only track selection', () => {

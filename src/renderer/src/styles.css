@@ -1370,16 +1370,15 @@ body {
   gap: 10px;
 }
 
-.gem-menu__scope {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 14px;
-}
-
 .gem-menu__grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.gem-menu__dynamics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 
@@ -1394,13 +1393,18 @@ body {
   cursor: pointer;
 }
 
-.gem-menu__target:hover {
+.gem-menu__target:hover,
+.gem-menu__target--selected,
+.gem-menu__target--selected:hover {
   border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-raised));
 }
 
-.gem-menu__spacer {
-  /* Blank top-right grid cell so column 4 aligns; non-interactive. */
-  pointer-events: none;
+.gem-menu__target:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  border-color: transparent;
+  background: var(--bg-raised);
 }
 
 /* Cymbal color chips: the active/selected chip and any hovered chip take their

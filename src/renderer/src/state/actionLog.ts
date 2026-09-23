@@ -1,6 +1,7 @@
 import { splitYargNoteId } from '../../../shared/midi/index';
 import type {
   BaseYargNote,
+  DrumDynamic,
   PreviewRemap,
   SeqDeletion,
   SeqOverride,
@@ -10,15 +11,14 @@ import type {
 // A live view of an active edit, not a historical event: reassign/delete rows are
 // keyed to a note (with its played bar), global rows to a MIDI number.
 export type LoggedAction =
-  | {
+  | ({
       kind: 'reassign';
       seq: number;
       tick: number;
       midi: number;
       bar: number;
       note: BaseYargNote;
-      accented: boolean;
-    }
+    } & ({ dynamic: DrumDynamic; accented?: never } | { accented: boolean; dynamic?: never }))
   | { kind: 'delete'; seq: number; tick: number; midi: number; bar: number }
   | { kind: 'globalReassign'; seq: number; midi: number; note: BaseYargNote; accented: boolean }
   | { kind: 'globalUnassign'; seq: number; midi: number };
@@ -74,7 +74,7 @@ export function buildActionLog({
       midi: o.midi,
       bar: playedBarOf(barStarts, o.tick),
       note: o.note,
-      accented: o.accented,
+      ...(o.dynamic !== undefined ? { dynamic: o.dynamic } : { accented: o.accented }),
     });
   }
   for (const r of previewRemaps) {

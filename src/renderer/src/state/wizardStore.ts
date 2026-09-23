@@ -4,8 +4,8 @@ import type {
   ConversionSettings,
   ConversionWarning,
   CymbalPriorities,
+  ExplicitNoteOverride,
   MidiMap,
-  NoteOverride,
   NoteRef,
   ParsedGpScore,
   PreviewRemap,
@@ -195,7 +195,7 @@ export interface WizardState {
   setPlaybackRate: (r: number) => void;
   setMetronomeOn: (on: boolean) => void;
   setMetronomeVolume: (v: number) => void;
-  addOverride: (override: NoteOverride) => void;
+  addOverride: (override: ExplicitNoteOverride) => void;
   deleteNote: (ref: NoteRef) => void;
   removeOverride: (tick: number, midi: number) => void;
   removeDeletion: (tick: number, midi: number) => void;
@@ -408,7 +408,11 @@ export const useWizardStore = create<WizardState>((set) => ({
     set((s) => ({
       overrides: [
         ...s.overrides.filter((o) => o.tick !== override.tick || o.midi !== override.midi),
-        { ...override, seq: nextSeq(s) },
+        {
+          ...override,
+          dynamic: override.note === 'orange' ? 'neutral' : override.dynamic,
+          seq: nextSeq(s),
+        },
       ],
     })),
   // A gem may be deleted once; a repeat delete of the same (tick, midi) is a no-op.

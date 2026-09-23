@@ -1,3 +1,4 @@
+import type { DrumDynamic } from './chart';
 import type { BaseYargNote, YargNoteId } from './midi';
 
 // A selected chart note, identified the same way overrides are (docs/DESIGN.md →
@@ -10,12 +11,19 @@ export type NoteRef = { tick: number; midi: number };
 // chart = convert(track, sessionMap) with these overrides applied on top. A note
 // is identified by (tick, midi) so an override survives re-conversion after an
 // "all notes" remap.
-export interface NoteOverride {
+interface NoteOverrideTarget {
   tick: number;
   midi: number;
   note: BaseYargNote; // the reassigned YARG note (lane + tom/cymbal)
-  accented: boolean; // accented-variant target chosen -> force accent
 }
+
+// Current overrides store the resulting dynamic explicitly. The legacy shape is
+// retained only so sessions written before explicit dynamics can keep their exact
+// behavior: true forces accent, while false preserves the converted note's dynamic.
+export type NoteOverride = NoteOverrideTarget &
+  ({ dynamic: DrumDynamic; accented?: never } | { accented: boolean; dynamic?: never });
+
+export type ExplicitNoteOverride = NoteOverrideTarget & { dynamic: DrumDynamic };
 
 // Recency-stamped variants of the edit-layer entries. The stamp orders the Action
 // Log newest-first (docs/DESIGN.md → Chart preview → Action Log); it lives only on

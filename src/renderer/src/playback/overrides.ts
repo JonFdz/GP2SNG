@@ -13,7 +13,15 @@ export function applyOverrides(notes: YargNote[], overrides: NoteOverride[]): Ya
   return notes.map((n) => {
     const ov = byKey.get(key(n.tick, n.midi));
     if (!ov) return { ...n };
-    return { ...n, note: ov.note, dynamic: ov.accented ? 'accent' : n.dynamic };
+    const dynamic =
+      ov.note === 'orange'
+        ? 'neutral'
+        : ov.dynamic !== undefined
+          ? ov.dynamic
+          : ov.accented
+            ? 'accent'
+            : n.dynamic;
+    return { ...n, note: ov.note, dynamic };
   });
 }
 

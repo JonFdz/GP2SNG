@@ -8,19 +8,14 @@ import {
   playedBars,
   tickToSeconds,
 } from '../../../shared/convert/index';
-import {
-  applyRemap,
-  lookup,
-  STANDARD_DRUM_MIDI_NAMES,
-  splitYargNoteId,
-} from '../../../shared/midi/index';
-import type { YargNote, YargNoteId } from '../../../shared/types/index';
+import { applyRemap, STANDARD_DRUM_MIDI_NAMES } from '../../../shared/midi/index';
+import type { BaseYargNote, DrumDynamic, YargNote } from '../../../shared/types/index';
 import { previewAudioOffsetSeconds } from '../audio/index';
 import { buildWaveformOverview } from '../audio/waveform';
 import { ActionLog } from '../components/ActionLog';
 import { AnchoredTooltip, anchorBottomRight } from '../components/AnchoredTooltip';
 import { ChartCanvas } from '../components/ChartCanvas';
-import { GemContextMenu, type ReassignScope } from '../components/GemContextMenu';
+import { GemContextMenu } from '../components/GemContextMenu';
 import { HelpIcon } from '../components/HelpIcon';
 import { MinimapCanvas } from '../components/MinimapCanvas';
 import { TempoSection } from '../components/TempoSection';
@@ -86,7 +81,6 @@ export function PreviewView() {
   const previewRemaps = useWizardStore((s) => s.previewRemaps);
   const removeOverride = useWizardStore((s) => s.removeOverride);
   const removeDeletion = useWizardStore((s) => s.removeDeletion);
-  const recordPreviewRemap = useWizardStore((s) => s.recordPreviewRemap);
   const removePreviewRemap = useWizardStore((s) => s.removePreviewRemap);
   const sessionMap = useWizardStore((s) => s.sessionMap);
   const sessionSettings = useWizardStore((s) => s.sessionSettings);
@@ -109,7 +103,6 @@ export function PreviewView() {
   const setConversion = useWizardStore((s) => s.setConversion);
 
   const globalMap = useSettingsStore((s) => s.globalMap);
-  const setGlobalMap = useSettingsStore((s) => s.setGlobalMap);
 
   const schedulerRef = useRef<Scheduler | null>(null);
   if (schedulerRef.current === null) schedulerRef.current = new Scheduler();
@@ -130,8 +123,6 @@ export function PreviewView() {
     y: number;
   } | null>(null);
   const [menu, setMenu] = useState<{ note: YargNote; x: number; y: number } | null>(null);
-  const [promptOpen, setPromptOpen] = useState(false);
-  const [promptError, setPromptError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
@@ -439,36 +430,12 @@ export function PreviewView() {
     deleteNote({ tick: note.tick, midi: note.midi });
   }
 
-  function handleReassign(target: YargNoteId | null, scope: ReassignScope) {
+  function handleEdit(note: BaseYargNote, dynamic: DrumDynamic) {
     if (menu === null) return;
     const { tick, midi } = menu.note;
-    if (scope === 'one') {
-      // Scope-"one" unassign is a one-off delete of this gem.
-      if (target === null) {
-        deleteNote({ tick, midi });
-        return;
-      }
-      const { note, accented } = splitYargNoteId(target);
-      addOverride({ tick, midi, note, accented });
-      return;
-    }
-    // "All notes on MIDI n" (target may be null = unassign the MIDI entirely):
-    // remap the session map, re-convert, record it for the Action Log, and offer the
-    // same "Update global MIDI map?" prompt as the Mapping step (docs/INTRO.md §10).
-    const currentMap = sessionMap ?? globalMap;
-    const cur = lookup(currentMap, midi);
-    const from: YargNoteId | null = cur ? (cur.accented ? `${cur.note}Accented` : cur.note) : null;
-    const nextMap = applyRemap(currentMap, midi, target);
-    try {
-      const result = convertToYargChart(gpScore, gpTrackIds, nextMap, sessionSettings);
-      // Commit the map edit only after a successful re-convert (recordPreviewRemap
-      // sets the session map); a failed reassign must not wipe the current chart.
-      recordPreviewRemap({ midi, from, to: target, nextMap });
-      setConversion(result.chart, result.warnings);
-      setPromptOpen(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Reassign failed.');
-    }
+    const effectiveDynamic = note === 'orange' ? 'neutral' : dynamic;
+    addOverride({ tick, midi, note, dynamic: effectiveDynamic });
+    setMenu({ ...menu, note: { ...menu.note, note, dynamic: effectiveDynamic } });
   }
 
   function handleUndo(a: LoggedAction) {
@@ -496,16 +463,6 @@ export function PreviewView() {
       setConversion(result.chart, result.warnings);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Undo failed.');
-    }
-  }
-
-  async function updateGlobalYes() {
-    try {
-      await setGlobalMap(sessionMap ?? globalMap);
-      setPromptOpen(false);
-      setPromptError(false);
-    } catch {
-      setPromptError(true); // in-memory session map retained
     }
   }
 
@@ -871,44 +828,14 @@ export function PreviewView() {
 
       {menu !== null && (
         <GemContextMenu
+          key={`${menu.note.tick}:${menu.note.midi}`}
           note={menu.note}
           x={menu.x}
           y={menu.y}
-          onReassign={handleReassign}
+          onEdit={handleEdit}
+          onDelete={() => handleDelete(menu.note)}
           onClose={closeMenu}
         />
-      )}
-
-      {promptOpen && (
-        <div className="modal-scrim">
-          <div className="modal">
-            <div className="modal__title">Update global MIDI map?</div>
-            <p className="modal__body">
-              You reassigned all notes on a MIDI number. Apply this to the global MIDI map for
-              future conversions too?
-            </p>
-            {promptError && (
-              <div className="error-banner error-banner--inline">
-                Could not save the global map. Try again, or keep the change for this song only.
-              </div>
-            )}
-            <div className="modal__actions">
-              <button type="button" className="btn" onClick={updateGlobalYes}>
-                Yes, update global map
-              </button>
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={() => {
-                  setPromptOpen(false);
-                  setPromptError(false);
-                }}
-              >
-                No, this song only
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

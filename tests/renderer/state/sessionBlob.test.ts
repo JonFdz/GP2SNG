@@ -26,7 +26,9 @@ const rawChart: YargChart = {
   leadInTicks: 0,
 };
 
-const overrides: SeqOverride[] = [{ tick: 0, midi: 38, note: 'orange', accented: false, seq: 1 }];
+const overrides: SeqOverride[] = [
+  { tick: 0, midi: 38, note: 'orange', dynamic: 'neutral', seq: 1 },
+];
 const deletions: SeqDeletion[] = [{ tick: 960, midi: 47, seq: 2 }];
 
 const metadata: SongMetadata = {

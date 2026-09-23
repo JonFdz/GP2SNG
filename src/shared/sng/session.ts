@@ -205,11 +205,16 @@ function validateEdits(parsed: Record<string, unknown>): void {
   for (const [i, raw] of (parsed.overrides as unknown[]).entries()) {
     const edit = record(raw, `overrides[${i}]`);
     const key = `${edit.tick}:${edit.midi}`;
+    const hasDynamic = 'dynamic' in edit;
+    const hasAccented = 'accented' in edit;
     if (
       !integer(edit.tick, 0) ||
       !midi(edit.midi) ||
       !BASE_YARG_NOTES.includes(edit.note as never) ||
-      typeof edit.accented !== 'boolean' ||
+      hasDynamic === hasAccented ||
+      (hasDynamic && !DYNAMICS.includes(edit.dynamic as never)) ||
+      (hasAccented && typeof edit.accented !== 'boolean') ||
+      (hasDynamic && edit.note === 'orange' && edit.dynamic !== 'neutral') ||
       !integer(edit.seq, 0) ||
       seenOverrides.has(key)
     ) {
