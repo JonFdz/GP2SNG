@@ -7,7 +7,15 @@ GP2SNG is free software licensed under the GNU General Public License,
 version 3 or later (GPL-3.0-or-later). The complete license text is shipped
 as LICENSE.txt.
 
-Corresponding source code is available at:
+Project source is available at:
 https://github.com/JonFdz/GP2SNG
 
-Third-party license notices are shipped in THIRD_PARTY_LICENSES/.
+Published releases are associated with their repository tag or commit and the
+corresponding GitHub source archive for that tag.
+
+Application and runtime third-party license notices are shipped in
+THIRD_PARTY_LICENSES/. These include notices for wasm-media-encoders and its
+libogg and libvorbis Ogg/Vorbis components.
+
+The packaged Electron runtime license is in LICENSE.electron.txt. Chromium and
+Electron-introduced bundled third-party credits are in LICENSES.chromium.html.

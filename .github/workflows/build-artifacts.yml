@@ -17,12 +17,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run licenses:check
       - run: npm run typecheck
       - run: npm test
       - run: npm run lint
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npm audit --audit-level=high
       - run: npm run build
+      - run: npm run licenses:check-wasm
 
   windows:
     name: Windows portable
@@ -46,17 +48,66 @@ jobs:
             throw "Expected one non-empty Windows portable artifact"
           }
           foreach ($path in @(
+            "dist/win-unpacked/LICENSE.electron.txt",
+            "dist/win-unpacked/LICENSES.chromium.html",
             "dist/win-unpacked/resources/LICENSE.txt",
             "dist/win-unpacked/resources/DISTRIBUTION_NOTICES.txt",
-            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/Inter.txt"
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/Inter.txt",
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/NPM_RUNTIME_NOTICES.txt",
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/libogg.txt",
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/libvorbis.txt",
+            "dist/win-unpacked/resources/THIRD_PARTY_LICENSES/WASM_ENCODER_NOTICE.txt"
           )) {
             if (-not (Test-Path $path)) { throw "Missing packaged compliance file: $path" }
+          }
+      - name: Create and verify standalone license archive
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $bundle = "dist/license-bundle"
+          New-Item -ItemType Directory -Path $bundle | Out-Null
+          Copy-Item "LICENSE" "$bundle/LICENSE.txt"
+          Copy-Item "DISTRIBUTION_NOTICES.txt" "$bundle/DISTRIBUTION_NOTICES.txt"
+          Copy-Item "THIRD_PARTY_LICENSES" "$bundle/THIRD_PARTY_LICENSES" -Recurse
+          Copy-Item "dist/win-unpacked/LICENSE.electron.txt" "$bundle/LICENSE.electron.txt"
+          Copy-Item "dist/win-unpacked/LICENSES.chromium.html" "$bundle/LICENSES.chromium.html"
+
+          $archive = "dist/GP2SNG-$version-licenses.zip"
+          Compress-Archive -Path "$bundle/*" -DestinationPath $archive
+          if (-not (Test-Path $archive) -or (Get-Item $archive).Length -eq 0) {
+            throw "Expected a non-empty standalone license archive"
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $archive))
+          try {
+            $members = @($zip.Entries | Where-Object { -not $_.FullName.EndsWith("/") } | ForEach-Object FullName)
+            $expectedMembers = @(
+              "LICENSE.txt",
+              "DISTRIBUTION_NOTICES.txt",
+              "LICENSE.electron.txt",
+              "LICENSES.chromium.html",
+              "THIRD_PARTY_LICENSES/Inter.txt",
+              "THIRD_PARTY_LICENSES/NPM_RUNTIME_NOTICES.txt",
+              "THIRD_PARTY_LICENSES/libogg.txt",
+              "THIRD_PARTY_LICENSES/libvorbis.txt",
+              "THIRD_PARTY_LICENSES/WASM_ENCODER_NOTICE.txt"
+            )
+            if ($members.Count -ne $expectedMembers.Count) {
+              throw "Unexpected standalone license archive member count: $($members.Count)"
+            }
+            foreach ($member in $expectedMembers) {
+              if ($members -notcontains $member) { throw "Missing license archive member: $member" }
+            }
+          } finally {
+            $zip.Dispose()
           }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: GP2SNG-windows-portable
           path: |
             dist/GP2SNG-*-portable.exe
+            dist/GP2SNG-*-licenses.zip
             LICENSE
             DISTRIBUTION_NOTICES.txt
             THIRD_PARTY_LICENSES/
@@ -97,9 +148,15 @@ jobs:
           test -s "dist/GP2SNG-${version}-${{ matrix.arch }}.dmg"
           test -s "dist/GP2SNG-${version}-${{ matrix.arch }}-mac.zip"
           resources="dist/${{ matrix.unpacked }}/GP2SNG.app/Contents/Resources"
+          test -f "$resources/LICENSE.electron.txt"
+          test -f "$resources/LICENSES.chromium.html"
           test -f "$resources/LICENSE.txt"
           test -f "$resources/DISTRIBUTION_NOTICES.txt"
           test -f "$resources/THIRD_PARTY_LICENSES/Inter.txt"
+          test -f "$resources/THIRD_PARTY_LICENSES/NPM_RUNTIME_NOTICES.txt"
+          test -f "$resources/THIRD_PARTY_LICENSES/libogg.txt"
+          test -f "$resources/THIRD_PARTY_LICENSES/libvorbis.txt"
+          test -f "$resources/THIRD_PARTY_LICENSES/WASM_ENCODER_NOTICE.txt"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: GP2SNG-macos-${{ matrix.arch }}

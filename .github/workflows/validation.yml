@@ -20,9 +20,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run licenses:check
       - run: npm run typecheck
       - run: npm test
       - run: npm run lint
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npm audit --audit-level=high
       - run: npm run build
+      - run: npm run licenses:check-wasm

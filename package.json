@@ -22,7 +22,10 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "licenses:generate": "node scripts/runtime-license-notices.mjs --generate",
+    "licenses:check": "node scripts/runtime-license-notices.mjs --check",
+    "licenses:check-wasm": "node scripts/check-wasm-bundle.mjs"
   },
   "build": {
     "appId": "com.gp2sng.app",
@@ -85,7 +88,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^43.7.3",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.16.1",
     "electron-vite": "^5.0.0",
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
